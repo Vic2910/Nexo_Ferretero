@@ -1,0 +1,63 @@
+# ------------------------------
+# Build output
+# ------------------------------
+[Bb]in/
+[Oo]bj/
+out/
+publish/
+artifacts/
+
+# ------------------------------
+# User/IDE files
+# ------------------------------
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# ------------------------------
+# Logs
+# ------------------------------
+*.log
+logs/
+
+# ------------------------------
+# NuGet
+# ------------------------------
+*.nupkg
+*.snupkg
+packages/
+!**/packages/build/
+
+# ------------------------------
+# Environment and secrets
+# ------------------------------
+.env
+.env.*
+secrets.json
+appsettings.Development.json
+appsettings.Local.json
+
+# ------------------------------
+# OS files
+# ------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ------------------------------
+# Test / coverage
+# ------------------------------
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# ------------------------------
+# Generated web assets
+# ------------------------------
+wwwroot/lib/

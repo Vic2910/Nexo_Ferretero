@@ -1,0 +1,20 @@
+@model PublicHeaderModel
+
+<header>
+    <div class="logo-container" onclick="window.location.href='@Model.HomeUrl'">
+        <img src="@Model.LogoUrl" alt="Ferretería" class="logo-img">
+        <div class="logo-text">
+            Nexo<span>Ferretero</span>
+        </div>
+    </div>
+
+    <nav>
+        @if (Model?.Items != null)
+        {
+            foreach (var item in Model.Items)
+            {
+                <a href="@item.Url">@item.Text</a>
+            }
+        }
+    </nav>
+</header>

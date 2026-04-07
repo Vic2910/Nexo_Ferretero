@@ -1,0 +1,360 @@
+﻿@model VendedorDashboardViewModel
+
+@{
+    ViewData["Title"] = "Panel Vendedor - NEXO Ferretero";
+    Layout = "_LayoutPublic";
+    var sellerName = Context.Session.GetString("UserName") ?? "Vendedor";
+    var helloName = sellerName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? sellerName;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/pages/vendedor.css" asp-append-version="true" />
+}
+
+@section Head {
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+}
+
+<nav class="seller-navbar">
+    <div class="logo">
+        <a href="@Url.Action("Index", "Home")" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
+            <img src="~/RecursosF/log.jpeg" alt="NEXO Ferretero">
+            <span>NEXOFerretero</span>
+        </a>
+    </div>
+
+    <div class="nav-actions">
+        <div class="notification-icon">
+            <button type="button" class="notification-trigger" id="notificationToggle" aria-label="Notificaciones">
+                <span>🔔</span>
+                <span class="notification-badge" id="notificationBadge">@Model.UnreadNotificationsCount</span>
+            </button>
+
+            <div class="notification-panel" id="notificationPanel">
+                <div class="notification-header">
+                    <span>Notificaciones</span>
+                    <small id="notificationCountLabel">@Model.UnreadNotificationsCount sin leer</small>
+                </div>
+                <ul class="notification-list" id="notificationList"
+                    data-mark-url="@Url.Action("MarkNotificationAsRead", "Home")"
+                    data-clear-url="@Url.Action("ClearNotifications", "Home")">
+                    @if (!Model.Notifications.Any())
+                    {
+                        <li class="notification-empty" id="notificationEmpty">Sin notificaciones</li>
+                    }
+                    else
+                    {
+                        foreach (var notification in Model.Notifications.OrderByDescending(x => x.CreatedAtUtc))
+                        {
+                            <li class="notification-item @(notification.IsRead ? string.Empty : "unread")" data-notification-id="@notification.Id">
+                                <div class="notification-main">
+                                    <div class="notification-avatar"><i class="fas fa-bell"></i></div>
+                                    <div class="notification-content">
+                                        <div class="notification-message">@notification.Message</div>
+                                        <div class="meta">@notification.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                    </div>
+                                </div>
+                                @if (!notification.IsRead)
+                                {
+                                    <button type="button" class="link-icon notification-read-btn" title="Marcar como leída">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                }
+                            </li>
+                        }
+                    }
+                </ul>
+                <div class="notification-actions">
+                    <button type="button" class="btn-secondary" id="clearNotificationsButton">Limpiar</button>
+                </div>
+            </div>
+        </div>
+
+        <form id="notificationFormToken" style="display:none;">
+            @Html.AntiForgeryToken()
+        </form>
+
+        <div class="profile-dropdown">
+            <div class="profile-avatar">@helloName.Substring(0, 1).ToUpperInvariant()</div>
+            <div class="profile-info">
+                <div class="name">@sellerName</div>
+                <div class="role">Vendedor</div>
+            </div>
+            <div class="dropdown-menu">
+                <form asp-action="Logout" method="post" style="margin:0;">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="logout-btn">
+                        <i class="fas fa-sign-out-alt"></i> Cerrar sesión
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<div class="seller-container">
+    <aside class="seller-sidebar">
+        <div class="seller-profile">
+            <div class="seller-avatar">@helloName.Substring(0, 1).ToUpperInvariant()</div>
+            <div class="seller-meta">
+                <h4>@sellerName</h4>
+                <p>Vendedor</p>
+            </div>
+        </div>
+        <ul class="seller-menu">
+            <li><a href="#inventory" class="active"><i class="fas fa-warehouse"></i> Inventario</a></li>
+        </ul>
+    </aside>
+
+    <main class="seller-content">
+        <div class="seller-header">
+            <div>
+                <h1>Hola, @helloName</h1>
+                <p>@sellerName · Control de stock de productos.</p>
+            </div>
+        </div>
+
+        <div class="stock-mini-toolbar">
+            <div class="inventory-search">
+                <i class="fas fa-search"></i>
+                <input type="text" id="inventorySearchInput" placeholder="Buscar por nombre" autocomplete="off" />
+            </div>
+            <select id="inventoryCategoryFilter" class="inventory-select">
+                <option value="">Todas las categorías</option>
+                @foreach (var option in Model.CategoryOptions.OrderBy(x => x.Name))
+                {
+                    <option value="@option.Name">@option.Name</option>
+                }
+            </select>
+            <select id="inventoryStockFilter" class="inventory-select">
+                <option value="all">Todos</option>
+                <option value="low">Por vencer (stock ≤ mínimo)</option>
+                <option value="out">Sin stock</option>
+                <option value="high">Stock más alto</option>
+            </select>
+        </div>
+
+        <section class="table-section" id="inventory">
+            <table class="inventory-table">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th>Categoría</th>
+                        <th>Stock</th>
+                        <th>Stock mínimo</th>
+                        <th>Alerta</th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryTableBody">
+                    @if (!Model.InventoryProducts.Any())
+                    {
+                        <tr>
+                            <td colspan="5" class="inventory-empty">No hay productos en inventario.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var product in Model.InventoryProducts)
+                        {
+                            var categoryName = Model.CategoryOptions.FirstOrDefault(c => c.Id == product.CategoryId)?.Name ?? "Sin categoría";
+                            var isOutOfStock = product.Stock <= 0;
+                            var isLowStock = !isOutOfStock && product.Stock < product.MinStock;
+                            <tr data-inventory-name="@product.Name" data-inventory-category="@categoryName" data-inventory-stock="@product.Stock" data-inventory-min-stock="@product.MinStock">
+                                <td>@product.Name</td>
+                                <td>@categoryName</td>
+                                <td class="@(isLowStock ? "stock-low" : string.Empty)">@product.Stock</td>
+                                <td>@product.MinStock</td>
+                                <td>
+                                    @if (isOutOfStock)
+                                    {
+                                        <span class="stock-alert-badge out">⚠ Sin stock</span>
+                                    }
+                                    else if (isLowStock)
+                                    {
+                                        <span class="stock-alert-badge low">⚠ Stock bajo</span>
+                                    }
+                                    else
+                                    {
+                                        <span>-</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+    (function () {
+        const notificationToggle = document.getElementById('notificationToggle');
+        const notificationPanel = document.getElementById('notificationPanel');
+        const notificationList = document.getElementById('notificationList');
+        const notificationBadge = document.getElementById('notificationBadge');
+        const notificationCountLabel = document.getElementById('notificationCountLabel');
+        const clearNotificationsButton = document.getElementById('clearNotificationsButton');
+        const antiForgeryToken = document.querySelector('#notificationFormToken input[name="__RequestVerificationToken"]')?.value;
+        const inventorySearchInput = document.getElementById('inventorySearchInput');
+        const inventoryCategoryFilter = document.getElementById('inventoryCategoryFilter');
+        const inventoryStockFilter = document.getElementById('inventoryStockFilter');
+        const inventoryTableBody = document.getElementById('inventoryTableBody');
+
+        function normalizeText(value) {
+            return (value || '')
+                .toString()
+                .trim()
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '');
+        }
+
+        function updateNotificationCounter(unreadCount) {
+            if (notificationBadge) {
+                notificationBadge.textContent = `${unreadCount}`;
+                notificationBadge.style.display = unreadCount > 0 ? 'flex' : 'none';
+            }
+
+            if (notificationCountLabel) {
+                notificationCountLabel.textContent = unreadCount > 0
+                    ? `${unreadCount} sin leer`
+                    : 'Sin pendientes';
+            }
+        }
+
+        function ensureNotificationEmptyState() {
+            if (!notificationList) {
+                return;
+            }
+
+            const hasItems = notificationList.querySelector('li.notification-item') !== null;
+            let empty = notificationList.querySelector('#notificationEmpty');
+            if (!hasItems && !empty) {
+                empty = document.createElement('li');
+                empty.id = 'notificationEmpty';
+                empty.className = 'notification-empty';
+                empty.textContent = 'Sin notificaciones';
+                notificationList.appendChild(empty);
+            }
+
+            if (hasItems && empty) {
+                empty.remove();
+            }
+        }
+
+        async function markNotificationAsRead(item) {
+            if (!item || !notificationList?.dataset.markUrl || !antiForgeryToken) {
+                return;
+            }
+
+            const id = item.dataset.notificationId;
+            if (!id) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', antiForgeryToken);
+            formData.append('id', id);
+
+            const response = await fetch(notificationList.dataset.markUrl, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload.succeeded) {
+                return;
+            }
+
+            item.classList.remove('unread');
+            item.querySelector('.notification-read-btn')?.remove();
+            updateNotificationCounter(payload.unreadCount ?? 0);
+        }
+
+        async function clearNotifications() {
+            if (!notificationList?.dataset.clearUrl || !antiForgeryToken) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', antiForgeryToken);
+
+            const response = await fetch(notificationList.dataset.clearUrl, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload.succeeded) {
+                return;
+            }
+
+            notificationList.querySelectorAll('li.notification-item').forEach(node => node.remove());
+            ensureNotificationEmptyState();
+            updateNotificationCounter(0);
+        }
+
+        function applyInventoryFilters() {
+            if (!inventoryTableBody) {
+                return;
+            }
+
+            const searchValue = normalizeText(inventorySearchInput?.value || '');
+            const selectedCategory = normalizeText(inventoryCategoryFilter?.value || '');
+            const stockValue = inventoryStockFilter?.value || 'all';
+            const rows = Array.from(inventoryTableBody.querySelectorAll('tr[data-inventory-name]'));
+
+            rows.forEach(row => {
+                const rowName = normalizeText(row.dataset.inventoryName || '');
+                const rowCategory = normalizeText(row.dataset.inventoryCategory || '');
+                const stock = Number(row.dataset.inventoryStock || 0);
+                const minStock = Number(row.dataset.inventoryMinStock || 0);
+
+                const matchesSearch = !searchValue || rowName.includes(searchValue);
+                const matchesCategory = !selectedCategory || rowCategory === selectedCategory;
+                const matchesStock = stockValue === 'all'
+                    || (stockValue === 'low' && stock > 0 && stock < minStock)
+                    || (stockValue === 'out' && stock <= 0)
+                    || (stockValue === 'high' && stock > minStock && stock > 0);
+
+                row.style.display = matchesSearch && matchesCategory && matchesStock ? '' : 'none';
+            });
+        }
+
+        notificationToggle?.addEventListener('click', event => {
+            event.stopPropagation();
+            notificationPanel?.classList.toggle('open');
+        });
+
+        notificationPanel?.addEventListener('click', event => {
+            event.stopPropagation();
+            const button = event.target.closest('.notification-read-btn');
+            if (!button) {
+                return;
+            }
+
+            const item = button.closest('.notification-item');
+            if (!item) {
+                return;
+            }
+
+            markNotificationAsRead(item);
+        });
+
+        document.addEventListener('click', () => {
+            notificationPanel?.classList.remove('open');
+        });
+
+        clearNotificationsButton?.addEventListener('click', clearNotifications);
+        inventorySearchInput?.addEventListener('input', applyInventoryFilters);
+        inventoryCategoryFilter?.addEventListener('change', applyInventoryFilters);
+        inventoryStockFilter?.addEventListener('change', applyInventoryFilters);
+
+        updateNotificationCounter(@Model.UnreadNotificationsCount);
+        ensureNotificationEmptyState();
+        applyInventoryFilters();
+    })();
+</script>

@@ -1,0 +1,12 @@
+@{
+    ViewData["Title"] = "Página no encontrada";
+    Layout = "_LayoutPublic";
+}
+
+<section style="min-height:70vh;display:flex;align-items:center;justify-content:center;padding:2rem;">
+    <div style="max-width:640px;text-align:center;">
+        <h1 style="font-size:2rem;margin-bottom:0.75rem;">404 - Página no encontrada</h1>
+        <p style="margin-bottom:1.25rem;">La página que buscas no existe o fue movida.</p>
+        <a href="@Url.Action("Index", "Home")" style="display:inline-block;padding:.75rem 1.25rem;background:#ff5722;color:#fff;text-decoration:none;border-radius:.5rem;">Volver al inicio</a>
+    </div>
+</section>

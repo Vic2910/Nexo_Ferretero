@@ -1,0 +1,431 @@
+﻿@model ClientProfileViewModel
+@using System.Text.Json
+
+@{
+    ViewData["Title"] = "NEXO Ferretero - Tienda Online";
+    Layout = "_LayoutPublic";
+    var isAuthenticated = ViewData["IsAuthenticated"] is bool value && value;
+    var loginUrl = ViewData["LoginUrl"] as string ?? Url.Action("Login", "Home") ?? "/Home/Login";
+    var isProfileSection = isAuthenticated && string.Equals(Context.Request.Query["section"], "profile", StringComparison.OrdinalIgnoreCase);
+    var categoriesById = Model.Categories.ToDictionary(x => x.Id, x => x.Name);
+    string BuildCategoryPlaceholder(string categoryName)
+    {
+        var normalized = (categoryName ?? string.Empty).Trim().ToLowerInvariant();
+        var icon = normalized switch
+        {
+            var value when value.Contains("plomer") || value.Contains("fontan") => "🚰",
+            var value when value.Contains("electri") => "⚡",
+            var value when value.Contains("pint") => "🎨",
+            var value when value.Contains("cerraj") => "🔒",
+            var value when value.Contains("jardin") => "🌿",
+            var value when value.Contains("seguri") => "🦺",
+            var value when value.Contains("tornill") => "🔩",
+            var value when value.Contains("herramient") => "🛠️",
+            var value when value.Contains("constru") => "🧱",
+            _ => "🧰"
+        };
+
+        var svg = $"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 500'><defs><linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#1d1d1f'/><stop offset='100%' stop-color='#000000'/></linearGradient></defs><rect width='800' height='500' fill='url(#bg)'/><g fill='white' fill-opacity='0.1'><circle cx='120' cy='100' r='62'/><circle cx='700' cy='420' r='95'/><rect x='270' y='55' width='220' height='40' rx='10'/><rect x='240' y='385' width='320' height='35' rx='8'/></g><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,sans-serif' font-size='138' fill='white'>{icon}</text></svg>";
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(svg));
+        return $"data:image/svg+xml;base64,{base64}";
+    }
+
+    var featuredByCategory = Model.Categories
+        .Select(category => new
+        {
+            Category = category,
+            Product = Model.Products.FirstOrDefault(product => product.CategoryId == category.Id && !string.IsNullOrWhiteSpace(product.ImageUrl1))
+        })
+        .ToList();
+}
+
+@section Head {
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/pages/portada.css" asp-append-version="true" />
+}
+
+<!-- HEADER -->
+<header class="main-header">
+        <div class="logo-container" onclick="window.location.href='/'">
+            <div class="logo-icon">
+                <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M50 5 L85 25 L85 65 L50 85 L15 65 L15 25 Z" fill="none" stroke="#ff5722" stroke-width="12" stroke-linejoin="round"/>
+                    <path d="M50 25 L85 45 L85 85 L50 105 L15 85 L15 45 Z" fill="none" stroke="#1d1d1f" stroke-width="12" stroke-linejoin="round" transform="translate(0, -10) scale(0.9)"/>
+                    <path d="M25 45 L50 60 L75 45" fill="none" stroke="#1d1d1f" stroke-width="10" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div class="logo-text">
+                NEXO<span> FERRETERO</span>
+            </div>
+        </div>
+
+        <div class="search-wrapper">
+            <div class="search-box">
+                <input type="text" id="catalogSearchInput" placeholder="Buscar herramientas, marcas, categorías...">
+                <button type="button" id="catalogSearchButton"><i class="fas fa-search"></i> Buscar</button>
+            </div>
+        </div>
+
+        <div class="user-actions">
+            <div class="icon-btn">
+                <i class="fas fa-bell"></i>
+                <span class="badge">3</span>
+            </div>
+            @if (isAuthenticated)
+            {
+                <button type="button" class="icon-btn" id="openOrderHistoryPanel" aria-label="Ver estado e historial de pedidos">
+                    <i class="fas fa-history"></i>
+                </button>
+                <button type="button" class="icon-btn" id="openSupportPanel" aria-label="Abrir sección de reportes y consultas">
+                    <i class="fas fa-headset"></i>
+                </button>
+            }
+            <button type="button" class="icon-btn" id="openCartPanel" aria-label="Abrir carrito">
+                <i class="fas fa-shopping-cart"></i>
+                <span class="badge" id="cartBadgeCount">0</span>
+            </button>
+            @if (isAuthenticated)
+            {
+                <div class="user-profile">
+                    <button type="button" class="user-profile-toggle" id="userProfileToggle" aria-expanded="false">
+                        <div class="user-avatar" id="userHeaderAvatar">
+                            @if (!string.IsNullOrWhiteSpace(Model.ProfileImageUrl))
+                            {
+                                <img src="@Model.ProfileImageUrl" alt="Foto de perfil" />
+                            }
+                            else
+                            {
+                                @Model.Initial
+                            }
+                        </div>
+                        <span class="user-name">@Model.DisplayName</span>
+                        <i class="fas fa-chevron-down profile-chevron"></i>
+                    </button>
+                    <div class="user-profile-menu" id="userProfileMenu">
+                        <button type="button" class="user-profile-menu-item" id="goToStoreHome">
+                            <i class="fas fa-store"></i> Inicio tienda
+                        </button>
+                        <button type="button" class="user-profile-menu-item" id="goToMyProfile">
+                            <i class="fas fa-user"></i> Mi perfil
+                        </button>
+                        <button type="button" class="user-profile-menu-item">
+                            <i class="fas fa-cog"></i> Configuración
+                        </button>
+                        <form asp-action="Logout" method="post" style="margin:0;">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="user-profile-menu-item danger">
+                                <i class="fas fa-sign-out-alt"></i> Cerrar sesión
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <a href="@loginUrl" class="icon-btn" style="text-decoration:none;">Iniciar sesión</a>
+            }
+        </div>
+    </header>
+
+    <aside class="cart-panel" id="cartPanel" aria-hidden="true">
+        <div class="cart-panel-header">
+            <h3>Carrito</h3>
+            <button type="button" id="closeCartPanel" aria-label="Cerrar carrito">×</button>
+        </div>
+        <div class="cart-panel-body" id="cartPanelBody"></div>
+        <div class="cart-panel-footer">
+            <div class="cart-total" id="cartTotal">Total: $0</div>
+            <button type="button" class="cart-checkout-btn" id="checkoutCartButton">Comprar</button>
+        </div>
+    </aside>
+    <div class="cart-overlay" id="cartOverlay" hidden></div>
+
+    @if (isAuthenticated)
+    {
+        <aside class="order-history-panel" id="orderHistoryPanel" aria-hidden="true">
+            <div class="cart-panel-header">
+                <h3>Estado e historial de pedidos</h3>
+                <button type="button" id="closeOrderHistoryPanel" aria-label="Cerrar historial">×</button>
+            </div>
+            <div class="order-history-body" id="purchaseHistoryContainer">
+                <p class="client-tools-empty">No hay compras registradas todavía.</p>
+            </div>
+        </aside>
+        <div class="order-history-overlay" id="orderHistoryOverlay" hidden></div>
+
+        <aside class="support-panel" id="supportPanel" aria-hidden="true">
+            <div class="cart-panel-header">
+                <h3>Reportes y consultas</h3>
+                <button type="button" id="closeSupportPanel" aria-label="Cerrar reportes">×</button>
+            </div>
+            <div class="support-panel-body">
+                <form asp-action="ContactStore" asp-controller="Home" method="post" id="contactSupportForm" class="contact-support-form">
+                    @Html.AntiForgeryToken()
+                    <div class="contact-support-grid">
+                        <label>
+                            Nombre
+                            <input type="text" name="Name" maxlength="80" required value="@Model.DisplayName" />
+                        </label>
+                        <label>
+                            Correo
+                            <input type="email" name="Email" maxlength="120" required value="@Model.Email" readonly />
+                        </label>
+                        <label class="full-width">
+                            Asunto
+                            <input type="text" name="Subject" maxlength="120" required placeholder="Ej. Error al procesar mi pago" />
+                        </label>
+                        <label class="full-width">
+                            Mensaje
+                            <textarea name="Message" maxlength="1500" rows="5" required placeholder="Describe tu consulta o el problema encontrado"></textarea>
+                        </label>
+                    </div>
+                    <p id="contactSupportMessage" class="contact-support-message" hidden></p>
+                    <div class="profile-form-actions">
+                        <button type="submit" class="profile-save-btn" id="contactSupportSubmitButton">Enviar consulta</button>
+                    </div>
+                </form>
+            </div>
+        </aside>
+        <div class="support-overlay" id="supportOverlay" hidden></div>
+    }
+
+    <div class="payment-modal-overlay" id="paymentModalOverlay" hidden>
+        <div class="payment-modal" role="dialog" aria-modal="true" aria-label="Seleccionar método de pago">
+            <div class="payment-modal-header">
+                <h3>Confirmar compra</h3>
+                <button type="button" id="closePaymentModal" aria-label="Cerrar selección de pago">×</button>
+            </div>
+            <div class="payment-methods" id="paymentMethods">
+                <button type="button" class="payment-method-btn active" data-payment-method="tarjeta">Tarjeta</button>
+                <button type="button" class="payment-method-btn" data-payment-method="paypal">PayPal</button>
+                <button type="button" class="payment-method-btn" data-payment-method="efectivo">Efectivo</button>
+            </div>
+            <div class="payment-method-panel active" data-payment-panel="tarjeta">
+                <div class="payment-form-grid">
+                    <label>
+                        Nombre del titular
+                        <input type="text" id="paymentCardHolder" maxlength="80" autocomplete="cc-name" />
+                    </label>
+                    <label>
+                        Número de tarjeta
+                        <input type="text" id="paymentCardNumber" maxlength="23" autocomplete="cc-number" inputmode="numeric" />
+                    </label>
+                    <label>
+                        Mes vencimiento
+                        <input type="number" id="paymentCardMonth" min="1" max="12" autocomplete="cc-exp-month" />
+                    </label>
+                    <label>
+                        Año vencimiento
+                        <input type="number" id="paymentCardYear" min="@DateTime.UtcNow.Year" max="@(DateTime.UtcNow.Year + 20)" autocomplete="cc-exp-year" />
+                    </label>
+                    <label>
+                        CVV
+                        <input type="password" id="paymentCardCvv" maxlength="4" autocomplete="cc-csc" inputmode="numeric" />
+                    </label>
+                </div>
+            </div>
+            <div class="payment-method-panel" data-payment-panel="paypal">
+                <div class="payment-form-grid paypal-panel-wrapper">
+                    <p class="profile-field-note" style="margin:0;">Serás redirigido dentro del modal a PayPal para aprobar tu pago.</p>
+                    <div id="paypalButtonsContainer" class="paypal-buttons-container"></div>
+                </div>
+            </div>
+            <div class="payment-method-panel" data-payment-panel="efectivo">
+                <div class="payment-form-grid">
+                    <label>
+                        Nombre para pago en efectivo
+                        <input type="text" id="paymentCashCustomerName" maxlength="80" autocomplete="name" />
+                    </label>
+                </div>
+            </div>
+            <p class="payment-validation-message" id="paymentValidationMessage" hidden></p>
+            <div class="payment-modal-actions">
+                <button type="button" class="profile-cancel-btn" id="cancelPaymentButton">Cancelar</button>
+                <button type="button" class="cart-checkout-btn" id="confirmPaymentButton">Confirmar compra</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <section class="storefront-section @(isProfileSection ? string.Empty : "active")" id="storefrontSection">
+            <!-- CARRUSEL DESTACADO -->
+            <section class="featured-carousel">
+                <div class="section-header">
+                    <h2>Categorías</h2>
+                    <div class="carousel-controls">
+                        <button class="carousel-btn" id="carouselPrev"><i class="fas fa-chevron-left"></i></button>
+                        <button class="carousel-btn" id="carouselNext"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <div class="carousel-track" id="carouselTrack">
+                    @if (!featuredByCategory.Any())
+                    {
+                        <div class="carousel-item">
+                            <img src="https://images.unsplash.com/photo-1581091870627-3a5c2e2d6f2f?w=400" alt="Sin datos">
+                            <div class="carousel-overlay">
+                                <h3>Sin categorías destacadas</h3>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        foreach (var featured in featuredByCategory)
+                        {
+                            var categoryImage = BuildCategoryPlaceholder(featured.Category.Name);
+                            var fallbackImage = BuildCategoryPlaceholder(featured.Category.Name);
+
+                            <div class="carousel-item">
+                                <img src="@categoryImage" alt="@featured.Category.Name" onerror="this.onerror=null;this.src='@fallbackImage';">
+                                <div class="carousel-overlay">
+                                    <h3>@featured.Category.Name</h3>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </section>
+
+            <!-- FILTROS -->
+            <section class="filters-section">
+                <div class="filters-list">
+                    <button class="filter-chip active" data-filter="Todo">Todo</button>
+                    @foreach (var category in Model.Categories.OrderBy(x => x.Name))
+                    {
+                        <button class="filter-chip" data-filter="@category.Name">@category.Name</button>
+                    }
+                </div>
+            </section>
+
+            <!-- GRID PRODUCTOS -->
+            <div class="products-grid" id="productsGrid"></div>
+
+        </section>
+
+        @if (isAuthenticated)
+        {
+        <section class="client-profile-card @(isProfileSection ? "active" : string.Empty)" id="clientProfileSection">
+            <div class="profile-card-header">
+                <div class="user-avatar" id="profileAvatarLabel">
+                    @if (!string.IsNullOrWhiteSpace(Model.ProfileImageUrl))
+                    {
+                        <img src="@Model.ProfileImageUrl" alt="Foto de perfil" />
+                    }
+                    else
+                    {
+                        @Model.Initial
+                    }
+                </div>
+                <div>
+                    <h3>Mi perfil</h3>
+                    <p>Mantén tus datos actualizados para una mejor experiencia.</p>
+                </div>
+            </div>
+
+            @if (TempData["SuccessMessage"] is not null)
+            {
+                <div class="success-message">@TempData["SuccessMessage"]</div>
+            }
+
+            @if (TempData["ErrorMessage"] is not null)
+            {
+                <div class="error-message">@TempData["ErrorMessage"]</div>
+            }
+
+            <form asp-action="UpdateClientProfile" asp-controller="Home" method="post" class="profile-form">
+                @Html.AntiForgeryToken()
+                <input asp-for="UserId" type="hidden" />
+                <input asp-for="Email" type="hidden" />
+                <input asp-for="Role" type="hidden" />
+                <input asp-for="ProfileImageUrl" type="hidden" id="profileImageUrl" />
+                <div asp-validation-summary="All" class="error-message"></div>
+
+                <div class="profile-photo-row">
+                    <div class="profile-photo-preview" id="profileImagePreview">
+                        @if (!string.IsNullOrWhiteSpace(Model.ProfileImageUrl))
+                        {
+                            <img src="@Model.ProfileImageUrl" alt="Foto de perfil" />
+                        }
+                        else
+                        {
+                            <span>@Model.Initial</span>
+                        }
+                    </div>
+                    <label class="profile-photo-btn" for="profileImageFile">Subir foto</label>
+                    <input id="profileImageFile" type="file" accept="image/*" hidden />
+                </div>
+
+                <div class="profile-card-grid">
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input asp-for="FirstName" type="text" class="form-control" required />
+                        <span asp-validation-for="FirstName" class="validation-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label>Apellido</label>
+                        <input asp-for="LastName" type="text" class="form-control" required />
+                        <span asp-validation-for="LastName" class="validation-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label>Correo</label>
+                        <input value="@Model.Email" type="email" class="form-control form-control-disabled" disabled aria-disabled="true" />
+                        <span class="profile-field-note">El correo no es editable.</span>
+                    </div>
+                    <div class="form-group">
+                        <label>Teléfono</label>
+                        <input asp-for="Phone" type="tel" class="form-control" pattern="^$|^\d+$" inputmode="numeric" />
+                        <span asp-validation-for="Phone" class="validation-error"></span>
+                    </div>
+                    <div class="form-group full-width">
+                        <label>Dirección</label>
+                        <input asp-for="Address" type="text" class="form-control" placeholder="Ingresa tu dirección" />
+                        <span asp-validation-for="Address" class="validation-error"></span>
+                    </div>
+                </div>
+
+                <div class="profile-form-actions">
+                    <button type="button" class="profile-cancel-btn" id="backToStoreFromProfile">Volver al inicio</button>
+                    <button type="submit" class="profile-save-btn">Guardar cambios</button>
+                </div>
+            </form>
+        </section>
+        }
+    </div>
+
+    <!-- MODAL -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-label="Detalle de producto">
+            <button type="button" class="modal-close" id="closeModal" aria-label="Cerrar detalle de producto">&times;</button>
+            <div class="modal-flex" id="modalContent"></div>
+        </div>
+    </div>
+
+@section Scripts {
+    <script>
+        window.portadaData = {
+            isAuthenticated: @Html.Raw(JsonSerializer.Serialize(isAuthenticated)),
+            loginUrl: @Html.Raw(JsonSerializer.Serialize(loginUrl)),
+            userEmail: @Html.Raw(JsonSerializer.Serialize(Model.Email)),
+            userDisplayName: @Html.Raw(JsonSerializer.Serialize(Model.DisplayName)),
+            paypalClientId: @Html.Raw(JsonSerializer.Serialize(ViewData["PayPalClientId"] as string ?? string.Empty)),
+            paypalEnabled: @Html.Raw(JsonSerializer.Serialize(ViewData["PayPalEnabled"] is bool enabled && enabled)),
+            products: @Html.Raw(JsonSerializer.Serialize(Model.Products.Select(product => new
+            {
+                id = product.Id,
+                name = product.Name,
+                category = categoriesById.TryGetValue(product.CategoryId, out var categoryName) ? categoryName : "Sin categoría",
+                price = product.Price,
+                image = product.ImageUrl1,
+                image2 = product.ImageUrl2,
+                image3 = product.ImageUrl3,
+                description = product.Description,
+                rating = 4.5,
+                stock = product.Stock,
+                minStock = product.MinStock
+            })))
+        };
+    </script>
+    <script src="~/js/pages/portada.js" asp-append-version="true"></script>
+}

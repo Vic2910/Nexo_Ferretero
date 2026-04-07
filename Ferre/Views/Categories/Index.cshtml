@@ -1,0 +1,178 @@
+@model CategoriesIndexViewModel
+
+@{
+    ViewData["Title"] = "Categorías - Administración";
+    Layout = "_LayoutPublic";
+}
+
+@{
+    var headerModel = new PublicHeaderModel(
+        new[]
+        {
+            new NavItem("Inicio", Url.Action("Index", "Home") ?? "#"),
+            new NavItem("Productos", "#"),
+            new NavItem("Ofertas", "#"),
+            new NavItem("Contacto", "#")
+        },
+        Url.Content("~/RecursosF/log.jpeg"),
+        Url.Action("Index", "Home") ?? "#");
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/pages/admin.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/pages/categories.css" asp-append-version="true" />
+}
+
+@section Head {
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+}
+
+@await Html.PartialAsync("_PublicHeader", headerModel)
+
+<div class="admin-container">
+    <aside class="admin-sidebar">
+        <div class="admin-profile">
+            <div class="admin-avatar">A</div>
+            <div class="admin-info">
+                <h4>Administrador</h4>
+                <p>admin@nexo.com</p>
+            </div>
+        </div>
+        <ul class="admin-menu">
+            <li><a href="@Url.Action("Admin", "Home")"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+            <li><a href="#"><i class="fas fa-box"></i> Productos</a></li>
+            <li><a href="#"><i class="fas fa-shopping-cart"></i> Pedidos</a></li>
+            <li><a href="#"><i class="fas fa-users"></i> Usuarios</a></li>
+            <li><a href="@Url.Action("Index", "Categories")" class="active"><i class="fas fa-tag"></i> Categorías</a></li>
+            <li><a href="#"><i class="fas fa-cog"></i> Configuración</a></li>
+            <li><a href="#"><i class="fas fa-headset"></i> Soporte</a></li>
+            <li><a href="#"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</a></li>
+        </ul>
+    </aside>
+
+    <main class="admin-content">
+        <div class="admin-header">
+            <div>
+                <h1>Gestión de categorías</h1>
+                <p>Administra las categorías de productos de la ferretería.</p>
+            </div>
+        </div>
+
+        @if (TempData["SuccessMessage"] is not null)
+        {
+            <div class="status-message">@TempData["SuccessMessage"]</div>
+        }
+
+        @if (TempData["ErrorMessage"] is not null)
+        {
+            <div class="error-message">@TempData["ErrorMessage"]</div>
+        }
+
+        <section class="table-section" style="margin-top: 24px;">
+            <div class="table-header">
+                <h3>Categorías registradas</h3>
+                <button type="button" class="btn-primary" id="openCategoryDrawer">
+                    <i class="fas fa-plus"></i> Agregar nueva categoría
+                </button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!Model.Categories.Any())
+                    {
+                        <tr>
+                            <td colspan="3">No hay categorías registradas.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var category in Model.Categories)
+                        {
+                            <tr>
+                                <td>@category.Name</td>
+                                <td>@(string.IsNullOrWhiteSpace(category.Description) ? "-" : category.Description)</td>
+                                <td class="action-icons">
+                                    <a class="link-icon" href="@Url.Action("Edit", "Categories", new { id = category.Id })" title="Editar">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <form asp-action="Delete" method="post" style="display:inline;">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@category.Id" />
+                                        <button type="submit" class="link-icon" title="Eliminar" onclick="return confirm('¿Eliminar esta categoría?');">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        <div class="drawer-overlay" id="categoryDrawerOverlay" hidden></div>
+        <aside class="drawer" id="categoryDrawer" aria-hidden="true">
+            <div class="drawer-header">
+                <div>
+                    <h3>Nueva categoría</h3>
+                    <p>Completa los datos para registrar la categoría.</p>
+                </div>
+                <button type="button" class="drawer-close" id="closeCategoryDrawer" aria-label="Cerrar">×</button>
+            </div>
+            <form asp-action="Create" method="post" class="category-form">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="All" class="text-danger"></div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input asp-for="Form.Name" type="text" placeholder="Ej. Herramientas eléctricas" required />
+                        <span asp-validation-for="Form.Name" class="text-danger"></span>
+                    </div>
+                    <div class="form-group">
+                        <label>Descripción</label>
+                        <input asp-for="Form.Description" type="text" placeholder="Uso, tipo o línea de productos" />
+                        <span asp-validation-for="Form.Description" class="text-danger"></span>
+                    </div>
+                </div>
+                <div class="drawer-actions">
+                    <button type="button" class="btn-secondary" id="cancelCategoryDrawer">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar categoría</button>
+                </div>
+            </form>
+        </aside>
+    </main>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        const drawer = document.getElementById('categoryDrawer');
+        const overlay = document.getElementById('categoryDrawerOverlay');
+        const openButton = document.getElementById('openCategoryDrawer');
+        const closeButton = document.getElementById('closeCategoryDrawer');
+        const cancelButton = document.getElementById('cancelCategoryDrawer');
+
+        function openDrawer() {
+            drawer.classList.add('open');
+            drawer.setAttribute('aria-hidden', 'false');
+            overlay.hidden = false;
+        }
+
+        function closeDrawer() {
+            drawer.classList.remove('open');
+            drawer.setAttribute('aria-hidden', 'true');
+            overlay.hidden = true;
+        }
+
+        openButton?.addEventListener('click', openDrawer);
+        closeButton?.addEventListener('click', closeDrawer);
+        cancelButton?.addEventListener('click', closeDrawer);
+        overlay?.addEventListener('click', closeDrawer);
+    </script>
+}

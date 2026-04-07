@@ -1,0 +1,3451 @@
+﻿@model CategoriesIndexViewModel
+@using Ferre.Models.Orders
+@using Ferre.Models.Support
+
+@{
+    ViewData["Title"] = "Panel de Administración - NEXO Ferretero";
+    Layout = "_LayoutPublic";
+    var isEditMode = ViewBag.EditMode is true;
+    var isProductEditMode = ViewBag.ProductEditMode is true;
+    var openCategoryDrawer = ViewBag.OpenCategoryDrawer is true || isEditMode;
+    var openProductDrawer = ViewBag.OpenProductDrawer is true || isProductEditMode;
+    var activeSection = ViewBag.ActiveSection as string;
+    var currentDateText = DateTime.Now.ToString("dddd, dd 'de' MMMM yyyy", new System.Globalization.CultureInfo("es-ES"));
+    var canAccessDashboard = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Dashboard, out var dashboardEnabled) || dashboardEnabled;
+    var canAccessProducts = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Products, out var productsEnabled) || productsEnabled;
+    var canAccessInventory = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Inventory, out var inventoryEnabled) || inventoryEnabled;
+    var canAccessUsers = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Users, out var usersEnabled) || usersEnabled;
+    var canAccessCategories = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Categories, out var categoriesEnabled) || categoriesEnabled;
+    var canAccessPermissions = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Permissions, out var permissionsEnabled) || permissionsEnabled;
+    var canAccessOrders = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Orders, out var ordersEnabled) || ordersEnabled;
+    var canAccessSupport = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Support, out var supportEnabled) || supportEnabled;
+    var canManageUserRoles = AdminAreas.All.All(area => Model.CurrentAdminPermissions.TryGetValue(area, out var enabled) && enabled);
+    var adminOrders = ViewBag.AdminOrders as IReadOnlyList<ClientPurchaseReceipt> ?? Array.Empty<ClientPurchaseReceipt>();
+    var supportMessages = ViewBag.SupportMessages as IReadOnlyList<ClientContactMessage> ?? Array.Empty<ClientContactMessage>();
+    var ordersDateFilter = ViewBag.OrdersDateFilter as string ?? string.Empty;
+    var supportDateFilter = ViewBag.SupportDateFilter as string ?? string.Empty;
+}
+
+<!-- Estilos adicionales para el panel -->
+@section Styles {
+    <link rel="stylesheet" href="~/css/pages/admin.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/pages/categories.css" asp-append-version="true" />
+    <style>
+        /* Ajustes y mejoras de diseño */
+        .admin-navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            padding: 12px 32px;
+            box-shadow: 0 1px 0 rgba(0,0,0,0.08); /* Minimalist border */
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .admin-navbar .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .admin-navbar .logo img {
+            height: 40px;
+        }
+
+        .admin-navbar .logo span {
+           font-weight: 700;
+           font-size: 1.25rem;
+           color: #1d1d1f;
+           letter-spacing: -0.3px;
+        }
+        .admin-navbar .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .notification-icon {
+            position: relative;
+            font-size: 1.4rem;
+            color: #1d1d1f;
+            cursor: pointer;
+        }
+
+        .notification-trigger {
+            border: none;
+            background: transparent;
+            font-size: 1.4rem;
+            cursor: pointer;
+            position: relative;
+            padding: 0;
+        }
+
+        .notification-panel {
+            position: absolute;
+            top: 140%;
+            right: 0;
+            width: 360px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.12);
+            z-index: 120;
+            display: none;
+            overflow: hidden;
+        }
+
+        .notification-panel.open {
+            display: block;
+        }
+
+        .notification-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.9rem 1rem;
+            border-bottom: 1px solid #edf2f7;
+            font-weight: 600;
+        }
+
+        .notification-list {
+            max-height: 320px;
+            overflow-y: auto;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .notification-item {
+            display: flex;
+            gap: 0.65rem;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.65rem 0.9rem;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        .notification-main {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            min-width: 0;
+        }
+
+        .notification-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #edf2f7;
+            color: #2d3748;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .notification-content {
+            min-width: 0;
+        }
+
+        .notification-message {
+            color: #2d3748;
+            font-size: 0.84rem;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 220px;
+        }
+
+        .notification-item.unread {
+            background: #fff8f0;
+        }
+
+        .notification-item .meta {
+            color: #718096;
+            font-size: 0.74rem;
+        }
+
+        .notification-actions {
+            padding: 0.75rem 1rem;
+            text-align: right;
+            border-top: 1px solid #edf2f7;
+        }
+
+        .notification-empty {
+            padding: 1rem;
+            color: #718096;
+            text-align: center;
+        }
+
+            .notification-icon i {
+                display: inline-block;
+            }
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -8px;
+            background: #ff5722;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 0.7rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .profile-dropdown {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .profile-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #1d1d1f;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
+            font-size: 1.1rem;
+        }
+        .profile-info {
+            line-height: 1.3;
+        }
+        .profile-info .name {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        .profile-info .role {
+            font-size: 0.8rem;
+            color: #718096;
+        }
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            width: 180px;
+            display: none;
+            z-index: 10;
+        }
+        .profile-dropdown:hover .dropdown-menu {
+            display: block;
+        }
+        .dropdown-menu a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0.75rem 1rem;
+            color: #4a5568;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+        .dropdown-menu a:hover {
+            background: #f7fafc;
+        }
+        .admin-container {
+            display: flex;
+            min-height: calc(100vh - 70px);
+            background: #f8f9fa;
+        }
+
+        .admin-sidebar {
+            width: 260px;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.02);
+            padding: 2rem 0;
+            position: fixed;
+            top: 70px; /* altura del navbar */
+            left: 0;
+            height: calc(100vh - 70px);
+            overflow-y: auto;
+        }
+        .admin-profile {
+            padding: 0 1.5rem 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 1.5rem;
+        }
+        .admin-avatar.large {
+            width: 60px;
+            height: 60px;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        .admin-info h4 {
+            margin: 0;
+            color: #2d3748;
+        }
+        .admin-info p {
+            margin: 0;
+            color: #718096;
+            font-size: 0.9rem;
+        }
+        .admin-menu {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .admin-menu li {
+            margin: 0.25rem 0;
+        }
+        .admin-menu a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0.75rem 1.5rem;
+            color: #4a5568;
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .admin-menu a.menu-priority {
+            color: #111827;
+            font-weight: 700;
+        }
+
+        .admin-menu a.menu-priority i {
+            color: #6b7280;
+        }
+
+        .admin-menu a.menu-secondary {
+            color: #94a3b8;
+            opacity: 0.8;
+            font-weight: 500;
+        }
+
+        .admin-menu a.menu-secondary i {
+            color: #b6c2d1;
+        }
+
+        .admin-menu a.menu-secondary:hover {
+            background: #f8fafc;
+            color: #64748b;
+            border-left-color: #e2e8f0;
+        }
+        .admin-menu a i {
+            width: 20px;
+            color: #a0aec0;
+        }
+        .admin-menu a:hover, .admin-menu a.active {
+            background: rgba(0, 0, 0, 0.05);
+            color: #1d1d1f;
+            border-left-color: #1d1d1f;
+        }
+        .admin-menu a:hover i, .admin-menu a.active i {
+            color: #ff5722;
+        }
+
+        .admin-content {
+            margin-left: 260px; /* espacio del sidebar */
+            padding: 2rem;
+        }
+        .section {
+            display: none;
+        }
+        .section.active {
+            display: block;
+        }
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .admin-header h1 {
+            font-size: 1.8rem;
+            color: #2d3748;
+            margin: 0 0 0.25rem;
+        }
+        .admin-header p {
+            color: #718096;
+            margin: 0;
+        }
+        .date-badge {
+            background: white;
+            padding: 0.5rem 1.5rem;
+            border-radius: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            color: #4a5568;
+            font-weight: 500;
+        }
+        /* Tarjetas de estadísticas */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            padding: 1.5rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            border: 1px solid #e5e7eb;
+        }
+
+        .stat-card:nth-child(1) {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        }
+
+        .stat-card:nth-child(2) {
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+        }
+
+        .stat-card:nth-child(3) {
+            background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+        }
+
+        .stat-card:nth-child(4) {
+            background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+        }
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            background: rgba(0,0,0,0.05);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ff5722;
+            font-size: 1.8rem;
+        }
+        .stat-info h3 {
+            margin: 0;
+            font-size: 1.8rem;
+            color: #2d3748;
+        }
+        .stat-info p {
+            margin: 0;
+            color: #718096;
+            font-weight: 500;
+        }
+        /* Gráfico simulado */
+        .chart-container {
+            background: white;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            margin-bottom: 2rem;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .chart-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 1rem;
+            height: 200px;
+        }
+        .bar {
+            flex: 1;
+            background: #ff5722;
+            border-radius: 8px 8px 0 0;
+            position: relative;
+            min-width: 40px;
+        }
+        .bar span {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.85rem;
+            color: #718096;
+        }
+        /* Formulario y tabla de usuarios */
+        .user-form-card {
+            background: white;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            margin-bottom: 2rem;
+        }
+
+        .permission-panel {
+            background: white;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            margin-top: 1.5rem;
+        }
+
+        .permission-header h3 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0 0 0.25rem;
+        }
+
+        .permission-header p {
+            margin: 0 0 1rem;
+            color: #64748b;
+        }
+
+        .permission-toolbar {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .permission-search-box input {
+            padding-left: 2.5rem;
+        }
+
+        .permission-list {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .permission-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .permission-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            gap: 1rem;
+        }
+
+        .permission-card-header small {
+            display: block;
+            color: #64748b;
+        }
+
+        .permission-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 0.65rem;
+        }
+
+        .permission-check {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 0.6rem 0.7rem;
+            font-weight: 500;
+            color: #334155;
+        }
+
+        .permission-empty {
+            color: #64748b;
+            font-size: 1rem;
+        }
+        .form-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 1.5rem;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-weight: 500;
+            color: #4a5568;
+            font-size: 0.9rem;
+        }
+        .form-control {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            transition: border 0.2s;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: #ff5722;
+        }
+        .btn-primary {
+            background: #ff5722;
+            color: white;
+            border: none;
+            padding: 0.7rem 1.8rem;
+            border-radius: 30px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary:hover {
+            background: #e64a19;
+        }
+        .btn-secondary {
+            background: white;
+            color: #4a5568;
+            border: 1px solid #e2e8f0;
+            padding: 0.7rem 1.8rem;
+            border-radius: 30px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-secondary:hover {
+            background: #f7fafc;
+        }
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            align-items: center;
+        }
+        .search-box {
+            flex: 2;
+            min-width: 250px;
+            position: relative;
+        }
+        .search-box i {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #a0aec0;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 0.7rem 1rem 0.7rem 2.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 30px;
+        }
+        .filter-select {
+            padding: 0.7rem 2rem 0.7rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 30px;
+            background: white;
+            color: #4a5568;
+            font-size: 0.95rem;
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+        th {
+            background: #f8f9fa;
+            color: #4a5568;
+            font-weight: 600;
+            font-size: 0.9rem;
+            padding: 1rem;
+            text-align: left;
+        }
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #edf2f7;
+            color: #2d3748;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        .product-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .product-name-with-image {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-badge {
+            background: #c6f6d5;
+            color: #22543d;
+            padding: 0.25rem 0.75rem;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .status-badge.warning {
+            background: #feebc8;
+            color: #7b341e;
+        }
+        .action-icons i {
+            color: #a0aec0;
+            margin: 0 5px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        td.action-icons {
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        .action-icons {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 40px;
+        }
+        .action-icons .link-icon {
+            background: transparent;
+            border: none;
+            padding: 0;
+            margin: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+        }
+        .action-icons i:hover {
+            color: #ff5722;
+        }
+        .role-badge {
+            background: rgba(0,0,0,0.05);
+            padding: 0.25rem 0.75rem;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .role-badge.admin {
+            background: #ff5722;
+            color: white;
+        }
+
+        .stock-mini-toolbar {
+            display: grid;
+            grid-template-columns: 1.2fr 220px 220px 220px;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .inventory-pagination {
+            margin-top: 12px;
+        }
+
+        .stock-low {
+            color: #dc2626;
+            font-weight: 700;
+        }
+
+        .stock-alert-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0.3rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .stock-alert-badge.low {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .stock-alert-badge.out {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .inventory-empty {
+            color: #64748b;
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 1rem;
+        }
+    </style>
+}
+
+@section Head {
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+}
+
+<!-- Navbar personalizada para admin -->
+<nav class="admin-navbar">
+    <div class="logo">
+        <a href="@Url.Action("Index", "Home")" style="display: flex; align-items: center; gap: 10px; text-decoration: none;">
+            <img src="~/RecursosF/log.jpeg" alt="NEXO Ferretero">
+            <span>NEXOFerretero</span>
+        </a>
+    </div>
+    <div class="nav-actions">
+        <div class="notification-icon">
+            <button type="button" class="notification-trigger" id="notificationToggle" aria-label="Notificaciones">
+                <span>🔔</span>
+                <span class="notification-badge" id="notificationBadge">@Model.UnreadNotificationsCount</span>
+            </button>
+
+            <div class="notification-panel" id="notificationPanel">
+                <div class="notification-header">
+                    <span>Notificaciones</span>
+                    <small id="notificationCountLabel">@Model.UnreadNotificationsCount sin leer</small>
+                </div>
+                <ul class="notification-list" id="notificationList"
+                    data-mark-url="@Url.Action("MarkNotificationAsRead", "Home")"
+                    data-clear-url="@Url.Action("ClearNotifications", "Home")">
+                    @if (!Model.Notifications.Any())
+                    {
+                        <li class="notification-empty" id="notificationEmpty">Sin notificaciones</li>
+                    }
+                    else
+                    {
+                        foreach (var notification in Model.Notifications.OrderByDescending(x => x.CreatedAtUtc))
+                        {
+                            <li class="notification-item @(notification.IsRead ? string.Empty : "unread")" data-notification-id="@notification.Id">
+                                <div class="notification-main">
+                                    <div class="notification-avatar"><i class="fas fa-bell"></i></div>
+                                    <div class="notification-content">
+                                        <div class="notification-message">@notification.Message</div>
+                                        <div class="meta">@notification.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                    </div>
+                                </div>
+                                @if (!notification.IsRead)
+                                {
+                                    <button type="button" class="link-icon notification-read-btn" title="Marcar como leída">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                }
+                            </li>
+                        }
+                    }
+                </ul>
+                <div class="notification-actions">
+                    <button type="button" class="btn-secondary" id="clearNotificationsButton">Limpiar</button>
+                </div>
+            </div>
+        </div>
+
+        <form id="notificationFormToken" style="display:none;">
+            @Html.AntiForgeryToken()
+        </form>
+
+        <div class="profile-dropdown">
+            <div class="profile-avatar">A</div>
+            <div class="profile-info">
+                <div class="name">@Context.Session.GetString("UserName")</div>
+                <div class="role">Administrador</div>
+            </div>
+            <div class="dropdown-menu">
+                <a href="#"><i class="fas fa-user"></i> Mi Perfil</a>
+                <a href="#"><i class="fas fa-cog"></i> Configuración</a>
+                <form asp-action="Logout" method="post" style="margin:0;">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" style="background:none;border:none;width:100%;text-align:left;padding:0.75rem 1rem;">
+                        <i class="fas fa-sign-out-alt"></i> Cerrar sesión
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<!-- CONTENEDOR ADMIN -->
+<div class="admin-container"
+     data-open-category-drawer="@(openCategoryDrawer ? "true" : "false")"
+     data-open-product-drawer="@(openProductDrawer ? "true" : "false")"
+     data-active-section="@activeSection">
+    <!-- SIDEBAR ADMIN -->
+    <aside class="admin-sidebar">
+        <div class="admin-profile">
+            <div class="admin-avatar large">A</div>
+            <div class="admin-info">
+                <h4>Administrador</h4>
+                <p>@Context.Session.GetString("UserName")</p>
+            </div>
+        </div>
+        <ul class="admin-menu">
+            @if (canAccessDashboard)
+            {
+                <li><a href="#" data-section="dashboard" class="menu-priority"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+            }
+            @if (canAccessProducts)
+            {
+                <li><a href="#" data-section="products" class="menu-priority"><i class="fas fa-box"></i> Productos</a></li>
+            }
+            @if (canAccessInventory)
+            {
+                <li><a href="#" data-section="inventory" class="menu-priority"><i class="fas fa-warehouse"></i> Inventario</a></li>
+            }
+            @if (canAccessOrders)
+            {
+                <li><a href="#" data-section="orders" class="menu-priority"><i class="fas fa-shopping-cart"></i> Pedidos</a></li>
+            }
+            @if (canAccessUsers)
+            {
+                <li><a href="#" data-section="users" class="menu-priority"><i class="fas fa-users"></i> Usuarios</a></li>
+            }
+            @if (canAccessCategories)
+            {
+                <li><a href="#categories" data-section="categories" class="menu-priority"><i class="fas fa-tag"></i> Categorías</a></li>
+            }
+            @if (canAccessPermissions)
+            {
+                <li><a href="#permissions" data-section="permissions" class="menu-priority"><i class="fas fa-user-shield"></i> Permisos</a></li>
+            }
+            <li><a href="#" data-section="settings" class="menu-secondary"><i class="fas fa-cog"></i> Configuración</a></li>
+            @if (canAccessSupport)
+            {
+                <li><a href="#" data-section="support" class="menu-priority"><i class="fas fa-headset"></i> Mensajes de contacto</a></li>
+            }
+        </ul>
+    </aside>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="admin-content">
+        @if (canAccessDashboard)
+        {
+        <!-- Sección Dashboard -->
+        <div id="dashboard" class="section">
+            <div class="admin-header">
+                <div>
+                    <h1>Dashboard</h1>
+                    <p>Bienvenido, aquí tienes el resumen de tu ferretería.</p>
+                </div>
+
+                <div class="date-badge">
+                    <i class="far fa-calendar-alt" style="margin-right: 8px;"></i> @currentDateText
+                </div>
+            </div>
+            <!-- TARJETAS DE ESTADÍSTICAS -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-box"></i></div>
+                    <div class="stat-info">
+                        <h3>@Model.InventoryProducts.Count</h3>
+                        <p>Productos registrados</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-tags"></i></div>
+                    <div class="stat-info">
+                        <h3>@Model.CategoryOptions.Count</h3>
+                        <p>Categorías registradas</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-users-cog"></i></div>
+                    <div class="stat-info">
+                        <h3>@Model.Users.Count</h3>
+                        <p>Usuarios internos</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-users"></i></div>
+                    <div class="stat-info">
+                        <h3>@Model.ClientUsersCount</h3>
+                        <p>Clientes</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GRÁFICO SIMULADO -->
+            <div class="chart-container">
+                <div class="chart-header">
+                    <h3>Ventas semanales</h3>
+                    <select class="filter-select">
+                        <option>Últimos 7 días</option>
+                        <option>Último mes</option>
+                    </select>
+                </div>
+                <div class="chart-bars">
+                    <div class="bar" style="height: 120px;"><span>Lun</span></div>
+                    <div class="bar" style="height: 150px;"><span>Mar</span></div>
+                    <div class="bar" style="height: 90px;"><span>Mié</span></div>
+                    <div class="bar" style="height: 170px;"><span>Jue</span></div>
+                    <div class="bar" style="height: 130px;"><span>Vie</span></div>
+                    <div class="bar" style="height: 200px;"><span>Sáb</span></div>
+                    <div class="bar" style="height: 110px;"><span>Dom</span></div>
+                </div>
+            </div>
+
+        </div>
+        }
+
+        @if (canAccessProducts)
+        {
+        <!-- Sección Productos -->
+        <div id="products" class="section">
+            <div class="admin-header">
+                <div>
+                    <h1>Gestión de productos</h1>
+                    <p>Administra el catálogo de productos de la ferretería.</p>
+                </div>
+                <button type="button" class="btn-primary" id="openProductDrawer">
+                    <i class="fas fa-plus"></i> Agregar nuevo producto
+                </button>
+            </div>
+
+            <form asp-action="Admin" method="get" class="category-toolbar" id="productFilterForm">
+                <input type="hidden" name="search" value="@Model.SearchTerm" />
+                <input type="hidden" name="sort" value="@Model.SortOrder" />
+                <input type="hidden" name="page" value="@Model.CurrentPage" />
+                <input type="hidden" name="section" value="products" />
+                <div class="category-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="productSearchInput" name="productSearch" value="@Model.ProductSearchTerm" placeholder="Buscar por nombre o descripción" autocomplete="off" />
+                </div>
+                <select name="productSort" class="category-sort" id="productSortSelect">
+                    <option value="az" selected="@(Model.ProductSortOrder == "az")">Ordenar A-Z</option>
+                    <option value="za" selected="@(Model.ProductSortOrder == "za")">Ordenar Z-A</option>
+                </select>
+                <button type="button" class="btn-secondary" id="clearProductFilters">Limpiar</button>
+            </form>
+
+            <section class="table-section">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Precio</th>
+                            <th>Stock</th>
+                            <th>Stock mín.</th>
+                            <th>Categoría</th>
+                            <th>Descripción</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!Model.InventoryProducts.Any())
+                        {
+                            <tr>
+                                <td colspan="7">No hay productos registrados.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var product in Model.InventoryProducts)
+                            {
+                                var productCategory = Model.CategoryOptions.FirstOrDefault(c => c.Id == product.CategoryId)?.Name ?? "Sin categoría";
+                                <tr data-product-id="@product.Id"
+                                    data-product-category-id="@product.CategoryId"
+                                    data-product-raw-name="@product.Name"
+                                    data-product-raw-price="@product.Price"
+                                    data-product-raw-stock="@product.Stock"
+                                    data-product-raw-min-stock="@product.MinStock"
+                                    data-product-raw-description="@product.Description"
+                                    data-product-image1="@product.ImageUrl1"
+                                    data-product-image2="@product.ImageUrl2"
+                                    data-product-image3="@product.ImageUrl3"
+                                    data-product-name="@product.Name.ToLowerInvariant()"
+                                    data-product-description="@((product.Description ?? string.Empty).ToLowerInvariant())"
+                                    data-product-category="@productCategory.ToLowerInvariant()"
+                                    data-product-price="@product.Price"
+                                    data-product-stock="@product.Stock">
+                                    <td>
+                                        <div class="product-name-with-image">
+                                            @if (!string.IsNullOrWhiteSpace(product.ImageUrl1))
+                                            {
+                                                <img src="@product.ImageUrl1" alt="@product.Name" class="product-img" />
+                                            }
+                                            <span>@product.Name</span>
+                                        </div>
+                                    </td>
+                                    <td>@product.Price.ToString("C")</td>
+                                    <td style="@(product.Stock <= product.MinStock ? "color:#dc2626;font-weight:700;" : string.Empty)">@product.Stock</td>
+                                    <td>@product.MinStock</td>
+                                    <td>@productCategory</td>
+                                    <td>@(string.IsNullOrWhiteSpace(product.Description) ? "-" : product.Description)</td>
+                                    <td class="action-icons">
+                                        <button type="button" class="link-icon product-edit-btn" title="Editar">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <form asp-action="DeleteProduct" method="post" style="display:inline;">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@product.Id" />
+                                            <input type="hidden" name="search" value="@Model.SearchTerm" />
+                                            <input type="hidden" name="sort" value="@Model.SortOrder" />
+                                            <input type="hidden" name="page" value="@Model.CurrentPage" />
+                                            <input type="hidden" name="productSearch" value="@Model.ProductSearchTerm" />
+                                            <input type="hidden" name="productSort" value="@Model.ProductSortOrder" />
+                                            <input type="hidden" name="productPage" value="@Model.ProductCurrentPage" />
+                                            <button type="submit" class="link-icon" title="Eliminar" onclick="return confirm('¿Eliminar este producto?');">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+
+                <div class="pagination-bar" id="productPaginationBar" hidden>
+                    <button type="button" class="btn-secondary" id="productPrevPage">Atrás</button>
+                    <span class="pagination-info" id="productPageInfo">Página 1 de 1</span>
+                    <button type="button" class="btn-secondary" id="productNextPage">Siguiente</button>
+                </div>
+            </section>
+
+            <div class="drawer-overlay" id="productDrawerOverlay" hidden></div>
+            <aside class="drawer" id="productDrawer" aria-hidden="true">
+                <div class="drawer-header">
+                    <div>
+                        <h3 id="productDrawerTitle">@((ViewBag.ProductEditMode is true) ? "Editar producto" : "Nuevo producto")</h3>
+                        <p>Completa los datos para guardar el producto.</p>
+                    </div>
+                    <button type="button" class="drawer-close" id="closeProductDrawer" aria-label="Cerrar">×</button>
+                </div>
+
+                <form asp-action="SaveProduct" method="post" class="category-form" enctype="multipart/form-data">
+                    @Html.AntiForgeryToken()
+                    <input asp-for="ProductForm.Id" type="hidden" />
+                    <input type="hidden" name="search" value="@Model.SearchTerm" />
+                    <input type="hidden" name="sort" value="@Model.SortOrder" />
+                    <input type="hidden" name="page" value="@Model.CurrentPage" />
+                    <input type="hidden" name="productSearch" value="@Model.ProductSearchTerm" />
+                    <input type="hidden" name="productSort" value="@Model.ProductSortOrder" />
+                    <input type="hidden" name="productPage" value="@Model.ProductCurrentPage" />
+                    <div asp-validation-summary="All" class="text-danger"></div>
+
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input asp-for="ProductForm.Name" type="text" required />
+                        <span asp-validation-for="ProductForm.Name" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Precio</label>
+                            <input asp-for="ProductForm.Price" type="number" min="0.01" step="0.01" required />
+                            <span asp-validation-for="ProductForm.Price" class="text-danger"></span>
+                        </div>
+                        <div class="form-group">
+                            <label>Categoría</label>
+                            <select asp-for="ProductForm.CategoryId" class="category-sort" required>
+                                <option value="">Selecciona una categoría</option>
+                                @foreach (var option in Model.CategoryOptions)
+                                {
+                                    <option value="@option.Id">@option.Name</option>
+                                }
+                            </select>
+                            <span asp-validation-for="ProductForm.CategoryId" class="text-danger"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Stock</label>
+                        <input asp-for="ProductForm.Stock" type="number" min="0" step="1" required />
+                        <span asp-validation-for="ProductForm.Stock" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Stock mínimo</label>
+                        <input asp-for="ProductForm.MinStock" type="number" min="0" step="1" required />
+                        <span asp-validation-for="ProductForm.MinStock" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Descripción</label>
+                        <input asp-for="ProductForm.Description" type="text" />
+                        <span asp-validation-for="ProductForm.Description" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Imagen 1 (obligatoria)</label>
+                        <input asp-for="ProductForm.ImageUrl1" type="hidden" />
+                        <input type="file" name="imageFile1" accept="image/*" />
+                        @if (!string.IsNullOrWhiteSpace(Model.ProductForm.ImageUrl1))
+                        {
+                            <small>Imagen 1 actual cargada.</small>
+                        }
+                        <span asp-validation-for="ProductForm.ImageUrl1" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Imagen 2</label>
+                        <input asp-for="ProductForm.ImageUrl2" type="hidden" />
+                        <input type="file" name="imageFile2" accept="image/*" />
+                        @if (!string.IsNullOrWhiteSpace(Model.ProductForm.ImageUrl2))
+                        {
+                            <small>Imagen 2 actual cargada.</small>
+                        }
+                        <span asp-validation-for="ProductForm.ImageUrl2" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Imagen 3</label>
+                        <input asp-for="ProductForm.ImageUrl3" type="hidden" />
+                        <input type="file" name="imageFile3" accept="image/*" />
+                        @if (!string.IsNullOrWhiteSpace(Model.ProductForm.ImageUrl3))
+                        {
+                            <small>Imagen 3 actual cargada.</small>
+                        }
+                        <span asp-validation-for="ProductForm.ImageUrl3" class="text-danger"></span>
+                    </div>
+
+                    <div class="drawer-actions">
+                        <button type="button" class="btn-secondary" id="cancelProductDrawer">Cancelar</button>
+                        <button type="submit" class="btn-primary" id="productDrawerSubmit">@((ViewBag.ProductEditMode is true) ? "Guardar cambios" : "Guardar producto")</button>
+                    </div>
+                </form>
+            </aside>
+        </div>
+        }
+
+        @if (canAccessInventory)
+        {
+        <div id="inventory" class="section">
+            <div class="admin-header">
+                <div>
+                    <h1>Inventario de productos</h1>
+                    <p>Controla el stock general y detecta productos por vencer o sin stock.</p>
+                </div>
+            </div>
+
+            <div class="stock-mini-toolbar">
+                <div class="category-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="inventorySearchInput" placeholder="Buscar por nombre" autocomplete="off" />
+                </div>
+                <select id="inventoryCategoryFilter" class="category-sort">
+                    <option value="">Todas las categorías</option>
+                    @foreach (var option in Model.CategoryOptions.OrderBy(x => x.Name))
+                    {
+                        <option value="@option.Name">@option.Name</option>
+                    }
+                </select>
+                <select id="inventoryStockFilter" class="category-sort">
+                    <option value="all">Todos</option>
+                    <option value="low">Por vencer (stock ≤ mínimo)</option>
+                    <option value="out">Sin stock</option>
+                    <option value="high">Stock más alto</option>
+                </select>
+                <select id="inventorySortSelect" class="category-sort">
+                    <option value="name_asc">Nombre A-Z</option>
+                    <option value="name_desc">Nombre Z-A</option>
+                    <option value="stock_desc">Stock mayor a menor</option>
+                    <option value="stock_asc">Stock menor a mayor</option>
+                </select>
+            </div>
+
+            <section class="table-section">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Categoría</th>
+                            <th>Stock</th>
+                            <th>Stock mínimo</th>
+                            <th>Alerta</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryTableBody">
+                        @if (!Model.InventoryProducts.Any())
+                        {
+                            <tr>
+                                <td colspan="5" class="inventory-empty">No hay productos en inventario.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var product in Model.InventoryProducts)
+                            {
+                                var categoryName = Model.CategoryOptions.FirstOrDefault(c => c.Id == product.CategoryId)?.Name ?? "Sin categoría";
+                                var isOutOfStock = product.Stock <= 0;
+                                var isLowStock = !isOutOfStock && product.Stock < product.MinStock;
+                                <tr data-inventory-name="@product.Name.ToLowerInvariant()" data-inventory-category="@categoryName" data-inventory-stock="@product.Stock" data-inventory-min-stock="@product.MinStock">
+                                    <td>
+                                        <div class="product-name-with-image">
+                                            @if (!string.IsNullOrWhiteSpace(product.ImageUrl1))
+                                            {
+                                                <img src="@product.ImageUrl1" alt="@product.Name" class="product-img" />
+                                            }
+                                            <span>@product.Name</span>
+                                        </div>
+                                    </td>
+                                    <td>@categoryName</td>
+                                    <td class="@(isLowStock ? "stock-low" : string.Empty)">@product.Stock</td>
+                                    <td>@product.MinStock</td>
+                                    <td>
+                                        @if (isOutOfStock)
+                                        {
+                                            <span class="stock-alert-badge out">⚠ Sin stock</span>
+                                        }
+                                        else if (isLowStock)
+                                        {
+                                            <span class="stock-alert-badge low">⚠ Stock bajo</span>
+                                        }
+                                        else
+                                        {
+                                            <span>-</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+
+                <div class="pagination-bar inventory-pagination" id="inventoryPaginationBar" hidden>
+                    <button type="button" class="btn-secondary" id="inventoryPrevPage">Atrás</button>
+                    <span class="pagination-info" id="inventoryPageInfo">Página 1 de 1</span>
+                    <button type="button" class="btn-secondary" id="inventoryNextPage">Siguiente</button>
+                </div>
+            </section>
+        </div>
+        }
+
+        @if (canAccessOrders)
+        {
+            <div id="orders" class="section">
+                <div class="admin-header">
+                    <div>
+                        <h1>Pedidos de clientes</h1>
+                        <p>Control de compras realizadas y estado de cada pedido.</p>
+                    </div>
+                </div>
+
+                <form asp-action="Admin" method="get" class="filter-bar" style="margin-bottom: 1rem;">
+                    <input type="hidden" name="section" value="orders" />
+                    <input type="hidden" name="search" value="@Model.SearchTerm" />
+                    <input type="hidden" name="sort" value="@Model.SortOrder" />
+                    <input type="hidden" name="page" value="@Model.CurrentPage" />
+                    <input type="hidden" name="productSearch" value="@Model.ProductSearchTerm" />
+                    <input type="hidden" name="productSort" value="@Model.ProductSortOrder" />
+                    <input type="hidden" name="productPage" value="@Model.ProductCurrentPage" />
+                    <div class="form-group" style="margin-bottom:0; min-width: 240px;">
+                        <label>Filtrar por fecha</label>
+                        <input type="date" name="ordersDate" class="form-control" value="@ordersDateFilter" />
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:flex-end;">
+                        <button type="submit" class="btn-primary"><i class="fas fa-search"></i> Filtrar</button>
+                        <a class="btn-secondary" href="@Url.Action("Admin", new { section = "orders" })">Limpiar</a>
+                    </div>
+                </form>
+
+                <section class="table-section">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Comprobante</th>
+                                <th>Cliente</th>
+                                <th>Fecha</th>
+                                <th>Método</th>
+                                <th>Total</th>
+                                <th>Estado</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!adminOrders.Any())
+                            {
+                                <tr>
+                                    <td colspan="7">No hay pedidos registrados para el criterio seleccionado.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                foreach (var order in adminOrders)
+                                {
+                                    var isCanceled = string.Equals(order.Status, "cancelado", StringComparison.OrdinalIgnoreCase);
+                                    <tr>
+                                        <td>@order.ReceiptNumber</td>
+                                        <td>@(order.Lines.Count) ítem(s)</td>
+                                        <td>@order.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td>@order.PaymentMethod</td>
+                                        <td>@order.Total.ToString("C")</td>
+                                        <td>
+                                            @if (isCanceled)
+                                            {
+                                                <span class="status-badge warning">Cancelado</span>
+                                            }
+                                            else if (string.Equals(order.Status, "pendiente", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                <span class="status-badge warning">Pendiente</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="status-badge">Pagado</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <form asp-action="CancelOrder" method="post" style="margin:0;">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="receiptId" value="@order.Id" />
+                                                <input type="hidden" name="ordersDate" value="@ordersDateFilter" />
+                                                <button type="submit" class="btn-secondary" disabled="@isCanceled" onclick="return confirm('¿Seguro que deseas anular este pedido?');">Anular</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+        }
+
+        @if (canAccessUsers)
+        {
+        <!-- Sección Usuarios -->
+        <div id="users" class="section">
+            @{
+                var totalUsers = Model.Users.Count;
+                var totalAdmins = Model.Users.Count(u => string.Equals(u.Role, "administrador", StringComparison.OrdinalIgnoreCase));
+                var totalSellers = Model.Users.Count(u => string.Equals(u.Role, "vendedor", StringComparison.OrdinalIgnoreCase));
+            }
+            <div class="admin-header">
+                <h1>Gestión de Usuarios</h1>
+                <p>Administra los usuarios y sus roles.</p>
+            </div>
+
+            <!-- Tarjetas rápidas de usuarios -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-users"></i></div>
+                    <div class="stat-info">
+                        <h3 id="usersTotalCount">@totalUsers</h3>
+                        <p>Total usuarios</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-user-tie"></i></div>
+                    <div class="stat-info">
+                        <h3 id="usersAdminsCount">@totalAdmins</h3>
+                        <p>Administradores</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-user-clock"></i></div>
+                    <div class="stat-info">
+                        <h3 id="usersSellersCount">@totalSellers</h3>
+                        <p>Vendedores</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Formulario para registrar usuario -->
+            <div class="user-form-card">
+                <div class="form-title" id="userFormTitle"><i class="fas fa-user-plus" style="margin-right: 8px;"></i>Registrar nuevo usuario</div>
+                <div id="userFormStatus" class="status-message" style="display:none;"></div>
+                <form asp-action="CreateUser" method="post" id="adminUserForm" data-create-url="@Url.Action("CreateUser", "Home")" data-update-url="@Url.Action("UpdateAdminUser", "Home")" novalidate>
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="Id" id="adminUserId" />
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Nombre *</label>
+                            <input type="text" name="FirstName" id="adminUserFirstName" class="form-control" placeholder="Ej. Juan" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Apellido *</label>
+                            <input type="text" name="LastName" id="adminUserLastName" class="form-control" placeholder="Ej. Pérez" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Email *</label>
+                            <input type="email" name="Email" id="adminUserEmail" class="form-control" placeholder="correo@ejemplo.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Teléfono</label>
+                            <input type="tel" name="Phone" id="adminUserPhone" class="form-control" placeholder="Ej. 56912345678" pattern="\d+" inputmode="numeric" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label id="userPasswordLabel">Contraseña *</label>
+                            <input type="password" name="Password" id="adminUserPassword" class="form-control" placeholder="••••••••" pattern="^(?:$|(?=.*[A-Z])(?=.*[^a-zA-Z0-9]).{8,})$" autocomplete="new-password" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Rol *</label>
+                            <select name="Role" id="adminUserRole" class="form-control" required data-can-manage-roles="@(canManageUserRoles ? "true" : "false")">
+                                <option value="vendedor">Vendedor</option>
+                                <option value="administrador" disabled="@(!canManageUserRoles)">Administrador</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button type="button" class="btn-secondary" id="cancelUserEdit">Cancelar</button>
+                        <button type="submit" class="btn-primary" id="saveUserButton">
+                            <i class="fas fa-save"></i> Guardar usuario
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Filtros y tabla de usuarios -->
+            <div style="background: white; border-radius: 16px; padding: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                <div class="filter-bar">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="userSearchInput" placeholder="Buscar por nombre...">
+                    </div>
+                    <select class="filter-select" id="userRoleFilter">
+                        <option value="">Todos los roles</option>
+                        <option value="administrador">Administrador</option>
+                        <option value="vendedor">Vendedor</option>
+                    </select>
+                    <button class="btn-secondary" type="button" id="clearUserFilters"><i class="fas fa-filter"></i> Limpiar</button>
+                </div>
+
+                <div class="table-responsive">
+                    <table id="usersTable" data-delete-url="@Url.Action("DeleteAdminUser", "Home")">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Email</th>
+                                <th>Teléfono</th>
+                                <th>Rol</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            @if (!Model.Users.Any())
+                            {
+                                <tr class="users-empty-row">
+                                    <td colspan="5">No hay usuarios registrados con rol administrador o vendedor.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                foreach (var user in Model.Users)
+                                {
+                                    var fullName = string.Join(" ", new[] { user.FirstName, user.LastName }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+                                    var isAdmin = string.Equals(user.Role, "administrador", StringComparison.OrdinalIgnoreCase);
+                                    <tr data-user-id="@user.Id" data-user-role="@user.Role" data-user-name="@fullName" data-user-email="@user.Email" data-user-phone="@user.Phone" data-user-first-name="@user.FirstName" data-user-last-name="@user.LastName">
+                                        <td class="user-name">@(string.IsNullOrWhiteSpace(fullName) ? "-" : fullName)</td>
+                                        <td class="user-email">@user.Email</td>
+                                        <td class="user-phone">@(string.IsNullOrWhiteSpace(user.Phone) ? "-" : user.Phone)</td>
+                                        <td class="user-role"><span class="role-badge @(isAdmin ? "admin" : string.Empty)">@(isAdmin ? "Administrador" : "Vendedor")</span></td>
+                                        <td class="action-icons">
+                                            <button type="button" class="link-icon user-edit-btn" title="Editar"><i class="fas fa-edit"></i></button>
+                                            <button type="button" class="link-icon user-delete-btn" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination-bar" id="usersPaginationBar" hidden>
+                    <button type="button" class="btn-secondary" id="usersPrevPage">Atrás</button>
+                    <span class="pagination-info" id="usersPageInfo">Página 1 de 1</span>
+                    <button type="button" class="btn-secondary" id="usersNextPage">Siguiente</button>
+                </div>
+            </div>
+        </div>
+        }
+
+        @if (canAccessPermissions)
+        {
+            var currentAdminEmail = Context.Session.GetString("UserEmail") ?? string.Empty;
+            var managedAdmins = Model.Users
+                .Where(x => string.Equals(x.Role, "administrador", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(x.Email, currentAdminEmail, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(x => x.FirstName)
+                .ThenBy(x => x.LastName)
+                .ToList();
+
+            <div id="permissions" class="section">
+                <div class="admin-header">
+                    <div>
+                        <h1>Permisos de administradores</h1>
+                        <p>Define qué áreas puede utilizar cada administrador secundario.</p>
+                    </div>
+                </div>
+
+                <section class="permission-panel" id="adminPermissionsPanel" data-current-admin-email="@currentAdminEmail">
+                    @if (!managedAdmins.Any())
+                    {
+                        <p class="permission-empty">No hay otros administradores para configurar.</p>
+                    }
+                    else
+                    {
+                        <div class="permission-toolbar">
+                            <div class="search-box permission-search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="adminPermissionSearchInput" placeholder="Buscar administrador por nombre o correo" />
+                            </div>
+                            <select id="adminPermissionSelect" class="filter-select">
+                                <option value="">Selecciona un administrador</option>
+                                @foreach (var admin in managedAdmins)
+                                {
+                                    var displayName = string.Join(" ", new[] { admin.FirstName, admin.LastName }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+                                    <option value="@admin.Email">@(string.IsNullOrWhiteSpace(displayName) ? admin.Email : displayName)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="permission-list" id="adminPermissionList">
+                            @foreach (var admin in managedAdmins)
+                            {
+                                var permissions = Model.AdminPermissionsByEmail.TryGetValue(admin.Email, out var existingPermissions)
+                                    ? existingPermissions
+                                    : new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+                                    {
+                                        [AdminAreas.Dashboard] = false,
+                                        [AdminAreas.Products] = false,
+                                        [AdminAreas.Inventory] = false,
+                                        [AdminAreas.Users] = false,
+                                        [AdminAreas.Categories] = false,
+                                        [AdminAreas.Permissions] = false,
+                                        [AdminAreas.Orders] = false,
+                                        [AdminAreas.Support] = false
+                                    };
+
+                                var displayName = string.Join(" ", new[] { admin.FirstName, admin.LastName }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+
+                                <article class="permission-card" data-admin-email="@admin.Email" data-admin-name="@displayName">
+                                    <form asp-action="UpdateAdminPermissions" method="post">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="email" value="@admin.Email" />
+                                        <div class="permission-card-header">
+                                            <div>
+                                                <strong>@(string.IsNullOrWhiteSpace(displayName) ? "Administrador" : displayName)</strong>
+                                                <small>@admin.Email</small>
+                                            </div>
+                                            <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar</button>
+                                        </div>
+
+                                        <div class="permission-grid">
+                                            <label class="permission-check"><input type="checkbox" name="allPermissions" value="true" class="all-permissions-toggle" /> Todos los permisos</label>
+                                            <label class="permission-check"><input type="checkbox" name="dashboard" value="true" checked="@(permissions.TryGetValue(AdminAreas.Dashboard, out var canDashboard) && canDashboard)" /> Dashboard</label>
+                                            <label class="permission-check"><input type="checkbox" name="products" value="true" checked="@(permissions.TryGetValue(AdminAreas.Products, out var canProducts) && canProducts)" /> Productos</label>
+                                            <label class="permission-check"><input type="checkbox" name="inventory" value="true" checked="@(permissions.TryGetValue(AdminAreas.Inventory, out var canInventory) && canInventory)" /> Inventario</label>
+                                            <label class="permission-check"><input type="checkbox" name="users" value="true" checked="@(permissions.TryGetValue(AdminAreas.Users, out var canUsers) && canUsers)" /> Gestión de usuarios</label>
+                                            <label class="permission-check"><input type="checkbox" name="categories" value="true" checked="@(permissions.TryGetValue(AdminAreas.Categories, out var canCategories) && canCategories)" /> Categorías</label>
+                                            <label class="permission-check"><input type="checkbox" name="permissions" value="true" checked="@(permissions.TryGetValue(AdminAreas.Permissions, out var canPermissionsArea) && canPermissionsArea)" /> Panel de permisos</label>
+                                            <label class="permission-check"><input type="checkbox" name="orders" value="true" checked="@(permissions.TryGetValue(AdminAreas.Orders, out var canOrders) && canOrders)" /> Pedidos</label>
+                                            <label class="permission-check"><input type="checkbox" name="support" value="true" checked="@(permissions.TryGetValue(AdminAreas.Support, out var canSupport) && canSupport)" /> Mensajes de contacto</label>
+                                        </div>
+                                    </form>
+                                </article>
+                            }
+                        </div>
+                    }
+                </section>
+            </div>
+        }
+
+        @if (canAccessCategories)
+        {
+        <!-- Sección Categorías -->
+        <div id="categories" class="section">
+            <div class="admin-header">
+                <div>
+                    <h1>Gestión de categorías</h1>
+                    <p>Administra las categorías de productos de la ferretería.</p>
+                </div>
+                <button type="button" class="btn-primary" id="openCategoryDrawer">
+                    <i class="fas fa-plus"></i> Agregar nueva categoría
+                </button>
+            </div>
+
+            @if (TempData["SuccessMessage"] is not null)
+            {
+                <div class="status-message">@TempData["SuccessMessage"]</div>
+            }
+
+            @if (TempData["ErrorMessage"] is not null)
+            {
+                <div class="error-message">@TempData["ErrorMessage"]</div>
+            }
+
+            <form asp-action="Admin" method="get" class="category-toolbar" id="categoryFilterForm">
+                <input type="hidden" name="editId" value="" />
+                <input type="hidden" name="section" value="categories" />
+                <input type="hidden" name="productSearch" value="@Model.ProductSearchTerm" />
+                <input type="hidden" name="productSort" value="@Model.ProductSortOrder" />
+                <input type="hidden" name="productPage" value="@Model.ProductCurrentPage" />
+                <div class="category-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="categorySearchInput" name="search" value="@Model.SearchTerm" placeholder="Buscar por nombre o descripción" autocomplete="off" />
+                </div>
+                <select name="sort" class="category-sort" id="categorySortSelect">
+                    <option value="az" selected="@(Model.SortOrder == "az")">Ordenar A-Z</option>
+                    <option value="za" selected="@(Model.SortOrder == "za")">Ordenar Z-A</option>
+                </select>
+                <button type="button" class="btn-secondary" id="clearCategoryFilters">Limpiar</button>
+            </form>
+
+            <section class="table-section">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Descripción</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!Model.CategoryOptions.Any())
+                        {
+                            <tr>
+                                <td colspan="3">No hay categorías registradas.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var category in Model.CategoryOptions)
+                            {
+                                <tr data-category-id="@category.Id"
+                                    data-category-raw-name="@category.Name"
+                                    data-category-raw-description="@category.Description"
+                                    data-category-name="@category.Name.ToLowerInvariant()"
+                                    data-category-description="@((category.Description ?? string.Empty).ToLowerInvariant())">
+                                    <td>@category.Name</td>
+                                    <td>@(string.IsNullOrWhiteSpace(category.Description) ? "-" : category.Description)</td>
+                                    <td class="action-icons">
+                                        <button type="button" class="link-icon category-edit-btn" title="Editar">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <form asp-action="DeleteCategory" method="post" style="display:inline;">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@category.Id" />
+                                            <input type="hidden" name="search" value="@Model.SearchTerm" />
+                                            <input type="hidden" name="sort" value="@Model.SortOrder" />
+                                            <input type="hidden" name="page" value="@Model.CurrentPage" />
+                                            <input type="hidden" name="productSearch" value="@Model.ProductSearchTerm" />
+                                            <input type="hidden" name="productSort" value="@Model.ProductSortOrder" />
+                                            <input type="hidden" name="productPage" value="@Model.ProductCurrentPage" />
+                                            <button type="submit" class="link-icon" title="Eliminar" onclick="return confirm('¿Eliminar esta categoría?');">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+
+                <div class="pagination-bar" id="categoryPaginationBar" hidden>
+                    <button type="button" class="btn-secondary" id="categoryPrevPage">Atrás</button>
+                    <span class="pagination-info" id="categoryPageInfo">Página 1 de 1</span>
+                    <button type="button" class="btn-secondary" id="categoryNextPage">Siguiente</button>
+                </div>
+            </section>
+
+            <div class="drawer-overlay" id="categoryDrawerOverlay" hidden></div>
+            <aside class="drawer" id="categoryDrawer" aria-hidden="true">
+                <div class="drawer-header">
+                    <div>
+                        <h3 id="categoryDrawerTitle">@(isEditMode ? "Editar categoría" : "Nueva categoría")</h3>
+                        <p>Completa los datos para guardar la categoría.</p>
+                    </div>
+                    <button type="button" class="drawer-close" id="closeCategoryDrawer" aria-label="Cerrar">×</button>
+                </div>
+                <form asp-action="SaveCategory" method="post" class="category-form">
+                    @Html.AntiForgeryToken()
+                    <input asp-for="Form.Id" type="hidden" />
+                    <input type="hidden" name="search" value="@Model.SearchTerm" />
+                    <input type="hidden" name="sort" value="@Model.SortOrder" />
+                    <input type="hidden" name="page" value="@Model.CurrentPage" />
+                    <input type="hidden" name="productSearch" value="@Model.ProductSearchTerm" />
+                    <input type="hidden" name="productSort" value="@Model.ProductSortOrder" />
+                    <input type="hidden" name="productPage" value="@Model.ProductCurrentPage" />
+                    <div asp-validation-summary="All" class="text-danger"></div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Nombre</label>
+                            <input asp-for="Form.Name" type="text" placeholder="Ej. Herramientas eléctricas" required />
+                            <span asp-validation-for="Form.Name" class="text-danger"></span>
+                        </div>
+                        <div class="form-group">
+                            <label>Descripción</label>
+                            <input asp-for="Form.Description" type="text" placeholder="Uso, tipo o línea de productos" />
+                            <span asp-validation-for="Form.Description" class="text-danger"></span>
+                        </div>
+                    </div>
+                    <div class="drawer-actions">
+                        <button type="button" class="btn-secondary" id="cancelCategoryDrawer">Cancelar</button>
+                        <button type="submit" class="btn-primary" id="categoryDrawerSubmit">@(isEditMode ? "Guardar cambios" : "Guardar categoría")</button>
+                    </div>
+                </form>
+            </aside>
+        </div>
+        }
+
+        <!-- Sección Configuración (placeholder) -->
+        <div id="settings" class="section">
+            <div class="admin-header">
+                <h1>Configuración</h1>
+            </div>
+            <p>Ajustes generales del sistema.</p>
+        </div>
+
+        @if (canAccessSupport)
+        {
+            <div id="support" class="section">
+                <div class="admin-header">
+                    <div>
+                        <h1>Mensajes de contacto</h1>
+                        <p>Consultas y reclamos enviados por clientes desde el catálogo.</p>
+                    </div>
+                </div>
+
+                <form asp-action="Admin" method="get" class="filter-bar" style="margin-bottom: 1rem;">
+                    <input type="hidden" name="section" value="support" />
+                    <input type="hidden" name="search" value="@Model.SearchTerm" />
+                    <input type="hidden" name="sort" value="@Model.SortOrder" />
+                    <input type="hidden" name="page" value="@Model.CurrentPage" />
+                    <input type="hidden" name="productSearch" value="@Model.ProductSearchTerm" />
+                    <input type="hidden" name="productSort" value="@Model.ProductSortOrder" />
+                    <input type="hidden" name="productPage" value="@Model.ProductCurrentPage" />
+                    <div class="form-group" style="margin-bottom:0; min-width: 240px;">
+                        <label>Filtrar por fecha</label>
+                        <input type="date" name="supportDate" class="form-control" value="@supportDateFilter" />
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:flex-end;">
+                        <button type="submit" class="btn-primary"><i class="fas fa-search"></i> Filtrar</button>
+                        <a class="btn-secondary" href="@Url.Action("Admin", new { section = "support" })">Limpiar</a>
+                    </div>
+                </form>
+
+                <section class="table-section">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Nombre</th>
+                                <th>Correo</th>
+                                <th>Asunto</th>
+                                <th>Mensaje</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!supportMessages.Any())
+                            {
+                                <tr>
+                                    <td colspan="5">No hay mensajes para el criterio seleccionado.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                foreach (var message in supportMessages)
+                                {
+                                    <tr>
+                                        <td>@message.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td>@message.Name</td>
+                                        <td>@message.Email</td>
+                                        <td>@message.Subject</td>
+                                        <td>@message.Message</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+        }
+    </main>
+</div>
+
+<!-- Script para cambiar entre secciones sin recargar -->
+<script>
+    (function() {
+        // Obtener todos los enlaces del menú lateral
+        const menuLinks = document.querySelectorAll('.admin-menu a');
+        const sections = document.querySelectorAll('.section');
+
+        // Función para activar una sección
+        function activateSection(sectionId) {
+            // Ocultar todas las secciones
+            sections.forEach(section => {
+                section.classList.remove('active');
+            });
+            // Mostrar la sección seleccionada
+            const activeSection = document.getElementById(sectionId);
+            if (activeSection) {
+                activeSection.classList.add('active');
+            }
+            // Actualizar clase activa en el menú
+            menuLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.dataset.section === sectionId) {
+                    link.classList.add('active');
+                }
+            });
+        }
+
+        // Asignar evento click a cada enlace
+        menuLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                const sectionId = this.dataset.section;
+                if (!sectionId) {
+                    return;
+                }
+
+                e.preventDefault(); // Evitar recarga de página
+                activateSection(sectionId);
+            });
+        });
+
+        // Activar la sección de usuarios por defecto (ya tiene clase active, pero aseguramos)
+        // También se puede leer de la URL si se quiere, pero por ahora dejamos usuarios
+        // Nota: si hay un hash en la URL, podríamos activar esa sección
+        const drawer = document.getElementById('categoryDrawer');
+        const overlay = document.getElementById('categoryDrawerOverlay');
+        const openButton = document.getElementById('openCategoryDrawer');
+        const closeButton = document.getElementById('closeCategoryDrawer');
+        const cancelButton = document.getElementById('cancelCategoryDrawer');
+        const productDrawer = document.getElementById('productDrawer');
+        const productOverlay = document.getElementById('productDrawerOverlay');
+        const openProductButton = document.getElementById('openProductDrawer');
+        const closeProductButton = document.getElementById('closeProductDrawer');
+        const cancelProductButton = document.getElementById('cancelProductDrawer');
+        const categoryDrawerTitle = document.getElementById('categoryDrawerTitle');
+        const categoryDrawerSubmit = document.getElementById('categoryDrawerSubmit');
+        const categoryFormIdInput = document.getElementById('Form_Id');
+        const categoryFormNameInput = document.getElementById('Form_Name');
+        const categoryFormDescriptionInput = document.getElementById('Form_Description');
+        const productDrawerTitle = document.getElementById('productDrawerTitle');
+        const productDrawerSubmit = document.getElementById('productDrawerSubmit');
+        const productFormIdInput = document.getElementById('ProductForm_Id');
+        const productFormNameInput = document.getElementById('ProductForm_Name');
+        const productFormPriceInput = document.getElementById('ProductForm_Price');
+        const productFormStockInput = document.getElementById('ProductForm_Stock');
+        const productFormMinStockInput = document.getElementById('ProductForm_MinStock');
+        const productFormDescriptionInput = document.getElementById('ProductForm_Description');
+        const productFormCategoryInput = document.getElementById('ProductForm_CategoryId');
+        const productFormImage1Input = document.getElementById('ProductForm_ImageUrl1');
+        const productFormImage2Input = document.getElementById('ProductForm_ImageUrl2');
+        const productFormImage3Input = document.getElementById('ProductForm_ImageUrl3');
+
+        function setCategoryCreateMode() {
+            if (categoryFormIdInput) {
+                categoryFormIdInput.value = '';
+            }
+
+            if (categoryFormNameInput) {
+                categoryFormNameInput.value = '';
+            }
+
+            if (categoryFormDescriptionInput) {
+                categoryFormDescriptionInput.value = '';
+            }
+
+            if (categoryDrawerTitle) {
+                categoryDrawerTitle.textContent = 'Nueva categoría';
+            }
+
+            if (categoryDrawerSubmit) {
+                categoryDrawerSubmit.textContent = 'Guardar categoría';
+            }
+        }
+
+        function setProductCreateMode() {
+            if (productFormIdInput) {
+                productFormIdInput.value = '';
+            }
+
+            if (productDrawerTitle) {
+                productDrawerTitle.textContent = 'Nuevo producto';
+            }
+
+            if (productDrawerSubmit) {
+                productDrawerSubmit.textContent = 'Guardar producto';
+            }
+        }
+
+        function setCategoryEditMode(row) {
+            if (!row) {
+                return;
+            }
+
+            if (categoryFormIdInput) {
+                categoryFormIdInput.value = row.dataset.categoryId || '';
+            }
+
+            if (categoryFormNameInput) {
+                categoryFormNameInput.value = row.dataset.categoryRawName || '';
+            }
+
+            if (categoryFormDescriptionInput) {
+                categoryFormDescriptionInput.value = row.dataset.categoryRawDescription || '';
+            }
+
+            if (categoryDrawerTitle) {
+                categoryDrawerTitle.textContent = 'Editar categoría';
+            }
+
+            if (categoryDrawerSubmit) {
+                categoryDrawerSubmit.textContent = 'Guardar cambios';
+            }
+        }
+
+        function setProductEditMode(row) {
+            if (!row) {
+                return;
+            }
+
+            if (productFormIdInput) {
+                productFormIdInput.value = row.dataset.productId || '';
+            }
+
+            if (productFormNameInput) {
+                productFormNameInput.value = row.dataset.productRawName || '';
+            }
+
+            if (productFormPriceInput) {
+                productFormPriceInput.value = row.dataset.productRawPrice || '';
+            }
+
+            if (productFormStockInput) {
+                productFormStockInput.value = row.dataset.productRawStock || '';
+            }
+
+            if (productFormMinStockInput) {
+                productFormMinStockInput.value = row.dataset.productRawMinStock || '';
+            }
+
+            if (productFormDescriptionInput) {
+                productFormDescriptionInput.value = row.dataset.productRawDescription || '';
+            }
+
+            if (productFormCategoryInput) {
+                productFormCategoryInput.value = row.dataset.productCategoryId || '';
+            }
+
+            if (productFormImage1Input) {
+                productFormImage1Input.value = row.dataset.productImage1 || '';
+            }
+
+            if (productFormImage2Input) {
+                productFormImage2Input.value = row.dataset.productImage2 || '';
+            }
+
+            if (productFormImage3Input) {
+                productFormImage3Input.value = row.dataset.productImage3 || '';
+            }
+
+            if (productDrawerTitle) {
+                productDrawerTitle.textContent = 'Editar producto';
+            }
+
+            if (productDrawerSubmit) {
+                productDrawerSubmit.textContent = 'Guardar cambios';
+            }
+        }
+
+        function openDrawer() {
+            drawer?.classList.add('open');
+            drawer?.setAttribute('aria-hidden', 'false');
+            if (overlay) {
+                overlay.hidden = false;
+            }
+        }
+
+        function closeDrawer() {
+            drawer?.classList.remove('open');
+            drawer?.setAttribute('aria-hidden', 'true');
+            if (overlay) {
+                overlay.hidden = true;
+            }
+        }
+
+        function openProductDrawer() {
+            productDrawer?.classList.add('open');
+            productDrawer?.setAttribute('aria-hidden', 'false');
+            if (productOverlay) {
+                productOverlay.hidden = false;
+            }
+        }
+
+        function closeProductDrawer() {
+            productDrawer?.classList.remove('open');
+            productDrawer?.setAttribute('aria-hidden', 'true');
+            if (productOverlay) {
+                productOverlay.hidden = true;
+            }
+        }
+
+        openButton?.addEventListener('click', () => {
+            setCategoryCreateMode();
+            openDrawer();
+        });
+        closeButton?.addEventListener('click', closeDrawer);
+        cancelButton?.addEventListener('click', () => {
+            setCategoryCreateMode();
+            closeDrawer();
+        });
+        overlay?.addEventListener('click', closeDrawer);
+        openProductButton?.addEventListener('click', () => {
+            setProductCreateMode();
+            openProductDrawer();
+        });
+        closeProductButton?.addEventListener('click', closeProductDrawer);
+        cancelProductButton?.addEventListener('click', () => {
+            setProductCreateMode();
+            closeProductDrawer();
+        });
+        productOverlay?.addEventListener('click', closeProductDrawer);
+
+        const container = document.querySelector('.admin-container');
+        const forcedSection = (container?.dataset.activeSection || '').trim();
+
+        if (forcedSection) {
+            activateSection(forcedSection);
+        }
+        else if (window.location.hash) {
+            const hash = window.location.hash.substring(1);
+            activateSection(hash);
+        }
+        else {
+            const params = new URLSearchParams(window.location.search);
+            const requestedSection = (params.get('section') || '').trim();
+            if (requestedSection) {
+                activateSection(requestedSection);
+            }
+            else if (params.has('search') || params.has('sort') || params.has('page')) {
+                activateSection('categories');
+            }
+            else if (params.has('productSearch') || params.has('productSort') || params.has('productPage')) {
+                activateSection('products');
+            }
+            else {
+                const firstAvailableSection = menuLinks[0]?.dataset.section;
+                if (firstAvailableSection) {
+                    activateSection(firstAvailableSection);
+                }
+            }
+        }
+
+        const shouldOpenDrawer = container?.dataset.openCategoryDrawer === 'true';
+        if (shouldOpenDrawer) {
+            activateSection('categories');
+            openDrawer();
+        }
+
+        const shouldOpenProductDrawer = container?.dataset.openProductDrawer === 'true';
+        if (shouldOpenProductDrawer) {
+            activateSection('products');
+            openProductDrawer();
+        }
+
+        const categoryFilterForm = document.getElementById('categoryFilterForm');
+        const categorySearchInput = document.getElementById('categorySearchInput');
+        const categorySortSelect = document.getElementById('categorySortSelect');
+        const clearCategoryFiltersButton = document.getElementById('clearCategoryFilters');
+        const categoryRowsContainer = document.querySelector('#categories tbody');
+        const categoryPaginationBar = document.getElementById('categoryPaginationBar');
+        const categoryPrevPage = document.getElementById('categoryPrevPage');
+        const categoryNextPage = document.getElementById('categoryNextPage');
+        const categoryPageInfo = document.getElementById('categoryPageInfo');
+        const productFilterForm = document.getElementById('productFilterForm');
+        const productSearchInput = document.getElementById('productSearchInput');
+        const productSortSelect = document.getElementById('productSortSelect');
+        const clearProductFiltersButton = document.getElementById('clearProductFilters');
+        const productRowsContainer = document.querySelector('#products tbody');
+        const productPaginationBar = document.getElementById('productPaginationBar');
+        const productPrevPage = document.getElementById('productPrevPage');
+        const productNextPage = document.getElementById('productNextPage');
+        const productPageInfo = document.getElementById('productPageInfo');
+        const inventorySearchInput = document.getElementById('inventorySearchInput');
+        const inventoryCategoryFilter = document.getElementById('inventoryCategoryFilter');
+        const inventoryStockFilter = document.getElementById('inventoryStockFilter');
+        const inventorySortSelect = document.getElementById('inventorySortSelect');
+        const inventoryTableBody = document.getElementById('inventoryTableBody');
+        const inventoryPaginationBar = document.getElementById('inventoryPaginationBar');
+        const inventoryPrevPage = document.getElementById('inventoryPrevPage');
+        const inventoryNextPage = document.getElementById('inventoryNextPage');
+        const inventoryPageInfo = document.getElementById('inventoryPageInfo');
+        let searchDebounceTimer;
+        let productSearchDebounceTimer;
+        let inventorySearchDebounceTimer;
+        const inventoryPageSize = 10;
+        let inventoryCurrentPage = 1;
+        const clientPageSize = 10;
+        let categoryCurrentPage = 1;
+        let productCurrentPage = 1;
+
+        function paginateRows(rows, currentPage, pageSize) {
+            const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+            const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+            const start = (safePage - 1) * pageSize;
+            return {
+                totalPages,
+                safePage,
+                pagedRows: rows.slice(start, start + pageSize)
+            };
+        }
+
+        function applyCategoryFilters(resetPage = true) {
+            if (!categoryRowsContainer) {
+                return;
+            }
+
+            const rows = Array.from(categoryRowsContainer.querySelectorAll('tr[data-category-name]'));
+            const term = (categorySearchInput?.value || '').trim().toLowerCase();
+            const sort = (categorySortSelect?.value || 'az').toLowerCase();
+
+            const filtered = rows.filter(row => {
+                const name = row.dataset.categoryName || '';
+                const description = row.dataset.categoryDescription || '';
+                return !term || name.includes(term) || description.includes(term);
+            });
+
+            filtered.sort((left, right) => {
+                const leftName = left.dataset.categoryName || '';
+                const rightName = right.dataset.categoryName || '';
+                return sort === 'za'
+                    ? rightName.localeCompare(leftName, 'es')
+                    : leftName.localeCompare(rightName, 'es');
+            });
+
+            if (resetPage) {
+                categoryCurrentPage = 1;
+            }
+
+            const { totalPages, safePage, pagedRows } = paginateRows(filtered, categoryCurrentPage, clientPageSize);
+            categoryCurrentPage = safePage;
+
+            rows.forEach(row => {
+                row.style.display = 'none';
+            });
+
+            const orderedRows = document.createDocumentFragment();
+            pagedRows.forEach(row => {
+                row.style.display = '';
+                orderedRows.appendChild(row);
+            });
+            categoryRowsContainer.appendChild(orderedRows);
+
+            if (categoryPaginationBar && categoryPrevPage && categoryNextPage && categoryPageInfo) {
+                categoryPaginationBar.hidden = filtered.length <= clientPageSize;
+                categoryPageInfo.textContent = `Página ${categoryCurrentPage} de ${totalPages}`;
+                categoryPrevPage.disabled = categoryCurrentPage <= 1;
+                categoryNextPage.disabled = categoryCurrentPage >= totalPages;
+            }
+        }
+
+        categoryFilterForm?.addEventListener('submit', event => event.preventDefault());
+        categorySearchInput?.addEventListener('input', () => {
+            window.clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = window.setTimeout(() => applyCategoryFilters(true), 200);
+        });
+        categorySortSelect?.addEventListener('change', () => applyCategoryFilters(true));
+        categoryPrevPage?.addEventListener('click', () => {
+            categoryCurrentPage -= 1;
+            applyCategoryFilters(false);
+        });
+        categoryNextPage?.addEventListener('click', () => {
+            categoryCurrentPage += 1;
+            applyCategoryFilters(false);
+        });
+        clearCategoryFiltersButton?.addEventListener('click', () => {
+            if (categorySearchInput) {
+                categorySearchInput.value = '';
+            }
+
+            if (categorySortSelect) {
+                categorySortSelect.value = 'az';
+            }
+
+            applyCategoryFilters(true);
+        });
+
+        function applyProductFilters(resetPage = true) {
+            if (!productRowsContainer) {
+                return;
+            }
+
+            const rows = Array.from(productRowsContainer.querySelectorAll('tr[data-product-name]'));
+            const term = (productSearchInput?.value || '').trim().toLowerCase();
+            const sort = (productSortSelect?.value || 'az').toLowerCase();
+
+            const filtered = rows.filter(row => {
+                const name = row.dataset.productName || '';
+                const description = row.dataset.productDescription || '';
+                const category = row.dataset.productCategory || '';
+                return !term || name.includes(term) || description.includes(term) || category.includes(term);
+            });
+
+            filtered.sort((left, right) => {
+                const leftName = left.dataset.productName || '';
+                const rightName = right.dataset.productName || '';
+                return sort === 'za'
+                    ? rightName.localeCompare(leftName, 'es')
+                    : leftName.localeCompare(rightName, 'es');
+            });
+
+            if (resetPage) {
+                productCurrentPage = 1;
+            }
+
+            const { totalPages, safePage, pagedRows } = paginateRows(filtered, productCurrentPage, clientPageSize);
+            productCurrentPage = safePage;
+
+            rows.forEach(row => {
+                row.style.display = 'none';
+            });
+
+            pagedRows.forEach(row => {
+                row.style.display = '';
+            });
+
+            if (productPaginationBar && productPrevPage && productNextPage && productPageInfo) {
+                productPaginationBar.hidden = filtered.length <= clientPageSize;
+                productPageInfo.textContent = `Página ${productCurrentPage} de ${totalPages}`;
+                productPrevPage.disabled = productCurrentPage <= 1;
+                productNextPage.disabled = productCurrentPage >= totalPages;
+            }
+        }
+
+        productFilterForm?.addEventListener('submit', event => event.preventDefault());
+        productSearchInput?.addEventListener('input', () => {
+            window.clearTimeout(productSearchDebounceTimer);
+            productSearchDebounceTimer = window.setTimeout(() => applyProductFilters(true), 200);
+        });
+        productSortSelect?.addEventListener('change', () => applyProductFilters(true));
+        productPrevPage?.addEventListener('click', () => {
+            productCurrentPage -= 1;
+            applyProductFilters(false);
+        });
+        productNextPage?.addEventListener('click', () => {
+            productCurrentPage += 1;
+            applyProductFilters(false);
+        });
+        clearProductFiltersButton?.addEventListener('click', () => {
+            if (productSearchInput) {
+                productSearchInput.value = '';
+            }
+
+            if (productSortSelect) {
+                productSortSelect.value = 'az';
+            }
+
+            applyProductFilters(true);
+        });
+
+        categoryRowsContainer?.addEventListener('click', event => {
+            const editButton = event.target.closest('.category-edit-btn');
+            if (!editButton) {
+                return;
+            }
+
+            const row = editButton.closest('tr[data-category-id]');
+            if (!row) {
+                return;
+            }
+
+            setCategoryEditMode(row);
+            activateSection('categories');
+            openDrawer();
+        });
+
+        productRowsContainer?.addEventListener('click', event => {
+            const editButton = event.target.closest('.product-edit-btn');
+            if (!editButton) {
+                return;
+            }
+
+            const row = editButton.closest('tr[data-product-id]');
+            if (!row) {
+                return;
+            }
+
+            setProductEditMode(row);
+            activateSection('products');
+            openProductDrawer();
+        });
+
+        function sortInventoryRows(rows, sortValue) {
+            return rows.sort((leftRow, rightRow) => {
+                const leftName = (leftRow.dataset.inventoryName || '').toLowerCase();
+                const rightName = (rightRow.dataset.inventoryName || '').toLowerCase();
+                const leftStock = Number(leftRow.dataset.inventoryStock || 0);
+                const rightStock = Number(rightRow.dataset.inventoryStock || 0);
+
+                switch (sortValue) {
+                    case 'name_desc':
+                        return rightName.localeCompare(leftName, 'es');
+                    case 'stock_desc':
+                        return rightStock - leftStock || leftName.localeCompare(rightName, 'es');
+                    case 'stock_asc':
+                        return leftStock - rightStock || leftName.localeCompare(rightName, 'es');
+                    default:
+                        return leftName.localeCompare(rightName, 'es');
+                }
+            });
+        }
+
+        function showInventoryEmptyRow(message) {
+            if (!inventoryTableBody) {
+                return;
+            }
+
+            let emptyRow = inventoryTableBody.querySelector('tr[data-inventory-empty="true"]');
+            if (!emptyRow) {
+                emptyRow = document.createElement('tr');
+                emptyRow.setAttribute('data-inventory-empty', 'true');
+                emptyRow.innerHTML = `<td colspan="5" class="inventory-empty">${message}</td>`;
+                inventoryTableBody.appendChild(emptyRow);
+                return;
+            }
+
+            const cell = emptyRow.querySelector('td');
+            if (cell) {
+                cell.textContent = message;
+            }
+        }
+
+        function clearInventoryEmptyRow() {
+            inventoryTableBody?.querySelector('tr[data-inventory-empty="true"]')?.remove();
+        }
+
+        function applyInventoryFilters(resetPage = true) {
+            if (!inventoryTableBody) {
+                return;
+            }
+
+            const searchValue = (inventorySearchInput?.value || '').trim().toLowerCase();
+            const categoryValue = (inventoryCategoryFilter?.value || '').trim();
+            const stockValue = inventoryStockFilter?.value || 'all';
+            const sortValue = inventorySortSelect?.value || 'name_asc';
+            const allRows = Array.from(inventoryTableBody.querySelectorAll('tr[data-inventory-name]'));
+            const matchedRows = allRows.filter(row => {
+                const rowName = (row.dataset.inventoryName || '').toLowerCase();
+                const rowCategory = row.dataset.inventoryCategory || '';
+                const stock = Number(row.dataset.inventoryStock || 0);
+                const minStock = Number(row.dataset.inventoryMinStock || 0);
+
+                const matchesSearch = !searchValue || rowName.includes(searchValue);
+                const matchesCategory = !categoryValue || rowCategory === categoryValue;
+                const matchesStock = stockValue === 'all'
+                    || (stockValue === 'low' && stock <= minStock)
+                    || (stockValue === 'out' && stock <= 0)
+                    || (stockValue === 'high' && stock > minStock && stock > 0);
+
+                return matchesSearch && matchesCategory && matchesStock;
+            });
+
+            const sortedRows = sortInventoryRows(matchedRows, sortValue);
+            const totalPages = Math.max(1, Math.ceil(sortedRows.length / inventoryPageSize));
+            if (resetPage) {
+                inventoryCurrentPage = 1;
+            }
+            inventoryCurrentPage = Math.min(inventoryCurrentPage, totalPages);
+
+            allRows.forEach(row => {
+                row.style.display = 'none';
+            });
+
+            clearInventoryEmptyRow();
+            if (!sortedRows.length) {
+                showInventoryEmptyRow('No hay productos que coincidan con el filtro aplicado.');
+                if (inventoryPaginationBar) {
+                    inventoryPaginationBar.hidden = true;
+                }
+                return;
+            }
+
+            const startIndex = (inventoryCurrentPage - 1) * inventoryPageSize;
+            const pagedRows = sortedRows.slice(startIndex, startIndex + inventoryPageSize);
+            pagedRows.forEach(row => {
+                row.style.display = '';
+            });
+
+            if (inventoryPaginationBar && inventoryPageInfo && inventoryPrevPage && inventoryNextPage) {
+                inventoryPaginationBar.hidden = totalPages <= 1;
+                inventoryPageInfo.textContent = `Página ${inventoryCurrentPage} de ${totalPages}`;
+                inventoryPrevPage.disabled = inventoryCurrentPage <= 1;
+                inventoryNextPage.disabled = inventoryCurrentPage >= totalPages;
+            }
+        }
+
+        inventorySearchInput?.addEventListener('input', () => {
+            window.clearTimeout(inventorySearchDebounceTimer);
+            inventorySearchDebounceTimer = window.setTimeout(() => applyInventoryFilters(true), 200);
+        });
+        inventoryCategoryFilter?.addEventListener('change', () => applyInventoryFilters(true));
+        inventoryStockFilter?.addEventListener('change', () => applyInventoryFilters(true));
+        inventorySortSelect?.addEventListener('change', () => applyInventoryFilters(true));
+        inventoryPrevPage?.addEventListener('click', () => {
+            if (inventoryCurrentPage <= 1) {
+                return;
+            }
+
+            inventoryCurrentPage -= 1;
+            applyInventoryFilters(false);
+        });
+        inventoryNextPage?.addEventListener('click', () => {
+            inventoryCurrentPage += 1;
+            applyInventoryFilters(false);
+        });
+        applyInventoryFilters(true);
+
+        const adminUserForm = document.getElementById('adminUserForm');
+        const adminUserIdInput = document.getElementById('adminUserId');
+        const adminUserFirstName = document.getElementById('adminUserFirstName');
+        const adminUserLastName = document.getElementById('adminUserLastName');
+        const adminUserEmail = document.getElementById('adminUserEmail');
+        const adminUserPhone = document.getElementById('adminUserPhone');
+        const adminUserRole = document.getElementById('adminUserRole');
+        const adminUserPassword = document.getElementById('adminUserPassword');
+        const userPasswordLabel = document.getElementById('userPasswordLabel');
+        const userFormTitle = document.getElementById('userFormTitle');
+        const saveUserButton = document.getElementById('saveUserButton');
+        const cancelUserEditButton = document.getElementById('cancelUserEdit');
+        const userFormStatus = document.getElementById('userFormStatus');
+        const usersTableBody = document.getElementById('usersTableBody');
+        const usersTable = document.getElementById('usersTable');
+        const userSearchInput = document.getElementById('userSearchInput');
+        const userRoleFilter = document.getElementById('userRoleFilter');
+        const clearUserFiltersButton = document.getElementById('clearUserFilters');
+        const usersPaginationBar = document.getElementById('usersPaginationBar');
+        const usersPrevPage = document.getElementById('usersPrevPage');
+        const usersNextPage = document.getElementById('usersNextPage');
+        const usersPageInfo = document.getElementById('usersPageInfo');
+        const usersTotalCount = document.getElementById('usersTotalCount');
+        const usersAdminsCount = document.getElementById('usersAdminsCount');
+        const usersSellersCount = document.getElementById('usersSellersCount');
+        const adminPermissionSearchInput = document.getElementById('adminPermissionSearchInput');
+        const adminPermissionSelect = document.getElementById('adminPermissionSelect');
+        const adminPermissionList = document.getElementById('adminPermissionList');
+        const antiForgeryToken = adminUserForm?.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        const notificationToggle = document.getElementById('notificationToggle');
+        const notificationPanel = document.getElementById('notificationPanel');
+        const notificationList = document.getElementById('notificationList');
+        const notificationBadge = document.getElementById('notificationBadge');
+        const notificationCountLabel = document.getElementById('notificationCountLabel');
+        const clearNotificationsButton = document.getElementById('clearNotificationsButton');
+        let currentEditSnapshot = null;
+        let usersCurrentPage = 1;
+
+        function normalizePhone(value) {
+            return (value || '').replace(/\D/g, '');
+        }
+
+        function applyAdminPermissionFilters() {
+            if (!adminPermissionList) {
+                return;
+            }
+
+            const term = (adminPermissionSearchInput?.value || '').trim().toLowerCase();
+            const selectedEmail = (adminPermissionSelect?.value || '').trim().toLowerCase();
+            const cards = Array.from(adminPermissionList.querySelectorAll('.permission-card'));
+
+            cards.forEach(card => {
+                const email = (card.dataset.adminEmail || '').toLowerCase();
+                const name = (card.dataset.adminName || '').toLowerCase();
+                const matchesSearch = !term || name.includes(term) || email.includes(term);
+                const matchesSelection = !selectedEmail || email === selectedEmail;
+                card.style.display = matchesSearch && matchesSelection ? '' : 'none';
+            });
+        }
+
+        function wirePermissionToggles() {
+            if (!adminPermissionList) {
+                return;
+            }
+
+            adminPermissionList.querySelectorAll('.permission-card form').forEach(form => {
+                if (form.dataset.permissionsWired === 'true') {
+                    return;
+                }
+
+                const allToggle = form.querySelector('.all-permissions-toggle');
+                const checkboxes = Array.from(form.querySelectorAll('input[type="checkbox"]'));
+                const areaCheckboxes = checkboxes.filter(node => !node.classList.contains('all-permissions-toggle'));
+
+                function syncAllToggle() {
+                    if (!allToggle) {
+                        return;
+                    }
+
+                    allToggle.checked = areaCheckboxes.every(node => node.checked);
+                }
+
+                allToggle?.addEventListener('change', () => {
+                    const checked = allToggle.checked;
+                    areaCheckboxes.forEach(node => {
+                        node.checked = checked;
+                    });
+                });
+
+                areaCheckboxes.forEach(node => {
+                    node.addEventListener('change', syncAllToggle);
+                });
+
+                syncAllToggle();
+                form.dataset.permissionsWired = 'true';
+            });
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function rebuildPermissionSelectOptions() {
+            if (!adminPermissionSelect || !adminPermissionList) {
+                return;
+            }
+
+            const cards = Array.from(adminPermissionList.querySelectorAll('.permission-card'));
+            adminPermissionSelect.innerHTML = '<option value="">Selecciona un administrador</option>';
+
+            cards
+                .sort((a, b) => (a.dataset.adminName || '').localeCompare(b.dataset.adminName || '', 'es'))
+                .forEach(card => {
+                    const option = document.createElement('option');
+                    option.value = card.dataset.adminEmail || '';
+                    option.textContent = card.dataset.adminName || card.dataset.adminEmail || 'Administrador';
+                    adminPermissionSelect.appendChild(option);
+                });
+        }
+
+        function ensurePermissionEmptyState() {
+            const panel = document.getElementById('adminPermissionsPanel');
+            if (!panel || !adminPermissionList) {
+                return;
+            }
+
+            const hasCards = adminPermissionList.querySelector('.permission-card') !== null;
+            let empty = panel.querySelector('.permission-empty');
+
+            if (!hasCards && !empty) {
+                empty = document.createElement('p');
+                empty.className = 'permission-empty';
+                empty.textContent = 'No hay otros administradores para configurar.';
+                panel.appendChild(empty);
+            }
+
+            if (hasCards && empty) {
+                empty.remove();
+            }
+        }
+
+        function buildPermissionCardMarkup(user) {
+            const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+            const safeName = escapeHtml(fullName || 'Administrador');
+            const safeEmail = escapeHtml(user.email || '');
+
+            return `
+                <form action="@Url.Action("UpdateAdminPermissions", "Home")" method="post">
+                    <input name="__RequestVerificationToken" type="hidden" value="${escapeHtml(antiForgeryToken || '')}" />
+                    <input type="hidden" name="email" value="${safeEmail}" />
+                    <div class="permission-card-header">
+                        <div>
+                            <strong>${safeName}</strong>
+                            <small>${safeEmail}</small>
+                        </div>
+                        <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar</button>
+                    </div>
+                    <div class="permission-grid">
+                        <label class="permission-check"><input type="checkbox" name="allPermissions" value="true" class="all-permissions-toggle" /> Todos los permisos</label>
+                        <label class="permission-check"><input type="checkbox" name="dashboard" value="true" /> Dashboard</label>
+                        <label class="permission-check"><input type="checkbox" name="products" value="true" /> Productos</label>
+                        <label class="permission-check"><input type="checkbox" name="inventory" value="true" /> Inventario</label>
+                        <label class="permission-check"><input type="checkbox" name="users" value="true" /> Gestión de usuarios</label>
+                        <label class="permission-check"><input type="checkbox" name="categories" value="true" /> Categorías</label>
+                        <label class="permission-check"><input type="checkbox" name="permissions" value="true" /> Panel de permisos</label>
+                        <label class="permission-check"><input type="checkbox" name="orders" value="true" /> Pedidos</label>
+                        <label class="permission-check"><input type="checkbox" name="support" value="true" /> Mensajes de contacto</label>
+                    </div>
+                </form>`;
+        }
+
+        function syncPermissionPanelForRoleChange(user, previousRole, updatedRole, previousEmail) {
+            const panel = document.getElementById('adminPermissionsPanel');
+            if (!panel || !adminPermissionList || !user) {
+                return;
+            }
+
+            const currentAdminEmail = (panel.dataset.currentAdminEmail || '').trim().toLowerCase();
+            const normalizedEmail = (user.email || '').trim().toLowerCase();
+            const normalizedPreviousEmail = (previousEmail || '').trim().toLowerCase();
+
+            if (normalizedPreviousEmail && normalizedPreviousEmail !== normalizedEmail) {
+                adminPermissionList.querySelector(`.permission-card[data-admin-email="${normalizedPreviousEmail}"]`)?.remove();
+            }
+
+            if (updatedRole === 'administrador' && normalizedEmail && normalizedEmail !== currentAdminEmail) {
+                const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+                let card = adminPermissionList.querySelector(`.permission-card[data-admin-email="${normalizedEmail}"]`);
+
+                if (!card) {
+                    card = document.createElement('article');
+                    card.className = 'permission-card';
+                    adminPermissionList.prepend(card);
+                }
+
+                card.dataset.adminEmail = normalizedEmail;
+                card.dataset.adminName = fullName;
+                card.innerHTML = buildPermissionCardMarkup(user);
+            }
+            else if (previousRole === 'administrador' || updatedRole !== 'administrador') {
+                adminPermissionList.querySelector(`.permission-card[data-admin-email="${normalizedEmail}"]`)?.remove();
+            }
+
+            rebuildPermissionSelectOptions();
+            ensurePermissionEmptyState();
+            wirePermissionToggles();
+            applyAdminPermissionFilters();
+        }
+
+        function updateNotificationCounter(unreadCount) {
+            if (notificationBadge) {
+                notificationBadge.textContent = `${unreadCount}`;
+                notificationBadge.style.display = unreadCount > 0 ? 'flex' : 'none';
+            }
+
+            if (notificationCountLabel) {
+                notificationCountLabel.textContent = unreadCount > 0
+                    ? `${unreadCount} sin leer`
+                    : 'Sin pendientes';
+            }
+        }
+
+        function ensureNotificationEmptyState() {
+            if (!notificationList) {
+                return;
+            }
+
+            const hasItems = notificationList.querySelector('li.notification-item') !== null;
+            let empty = notificationList.querySelector('#notificationEmpty');
+            if (!hasItems && !empty) {
+                empty = document.createElement('li');
+                empty.id = 'notificationEmpty';
+                empty.className = 'notification-empty';
+                empty.textContent = 'Sin notificaciones';
+                notificationList.appendChild(empty);
+            }
+
+            if (hasItems && empty) {
+                empty.remove();
+            }
+        }
+
+        function appendNotification(notification) {
+            if (!notificationList || !notification) {
+                return;
+            }
+
+            const item = document.createElement('li');
+            item.className = 'notification-item unread';
+            item.dataset.notificationId = notification.id;
+
+            const info = document.createElement('div');
+            info.className = 'notification-main';
+            const avatar = document.createElement('div');
+            avatar.className = 'notification-avatar';
+            avatar.innerHTML = '<i class="fas fa-bell"></i>';
+            const content = document.createElement('div');
+            content.className = 'notification-content';
+            const message = document.createElement('div');
+            message.className = 'notification-message';
+            message.textContent = notification.message || 'Nueva notificación';
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            const createdAt = notification.createdAtUtc ? new Date(notification.createdAtUtc) : new Date();
+            meta.textContent = createdAt.toLocaleString();
+
+            content.appendChild(message);
+            content.appendChild(meta);
+            info.appendChild(avatar);
+            info.appendChild(content);
+
+            const readButton = document.createElement('button');
+            readButton.type = 'button';
+            readButton.className = 'link-icon notification-read-btn';
+            readButton.title = 'Marcar como leída';
+            readButton.innerHTML = '<i class="fas fa-check"></i>';
+
+            item.appendChild(info);
+            item.appendChild(readButton);
+            notificationList.prepend(item);
+
+            ensureNotificationEmptyState();
+        }
+
+        async function markNotificationAsRead(item) {
+            if (!item || !notificationList?.dataset.markUrl || !antiForgeryToken) {
+                return;
+            }
+
+            const id = item.dataset.notificationId;
+            if (!id) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', antiForgeryToken);
+            formData.append('id', id);
+
+            const response = await fetch(notificationList.dataset.markUrl, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload.succeeded) {
+                return;
+            }
+
+            item.classList.remove('unread');
+            item.querySelector('.notification-read-btn')?.remove();
+            updateNotificationCounter(payload.unreadCount ?? 0);
+        }
+
+        async function clearNotifications() {
+            if (!notificationList?.dataset.clearUrl || !antiForgeryToken) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', antiForgeryToken);
+
+            const response = await fetch(notificationList.dataset.clearUrl, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload.succeeded) {
+                return;
+            }
+
+            notificationList.querySelectorAll('li.notification-item').forEach(node => node.remove());
+            ensureNotificationEmptyState();
+            updateNotificationCounter(0);
+        }
+
+        function getFieldValidationMessage(field) {
+            if (!field) {
+                return 'Formulario inválido.';
+            }
+
+            if (field.validity.valueMissing) {
+                if (field.id === 'adminUserFirstName') return 'El nombre es obligatorio.';
+                if (field.id === 'adminUserLastName') return 'El apellido es obligatorio.';
+                if (field.id === 'adminUserEmail') return 'El correo es obligatorio.';
+                if (field.id === 'adminUserPhone') return 'El teléfono es obligatorio.';
+                if (field.id === 'adminUserPassword') return 'La contraseña es obligatoria.';
+                if (field.id === 'adminUserRole') return 'El rol es obligatorio.';
+            }
+
+            if (field.validity.typeMismatch && field.id === 'adminUserEmail') {
+                return 'El correo debe tener un formato válido (ejemplo@dominio.com).';
+            }
+
+            if (field.validity.patternMismatch) {
+                if (field.id === 'adminUserPhone') {
+                    return 'El teléfono solo debe contener números.';
+                }
+
+                if (field.id === 'adminUserPassword') {
+                    return 'La contraseña debe tener al menos 8 caracteres, una mayúscula y un símbolo.';
+                }
+            }
+
+            return 'Hay campos inválidos en el formulario.';
+        }
+
+        function wireUserFormValidation() {
+            if (!adminUserForm) {
+                return;
+            }
+
+            const fields = adminUserForm.querySelectorAll('input, select');
+            fields.forEach(field => {
+                field.addEventListener('invalid', event => {
+                    const currentField = event.target;
+                    currentField.setCustomValidity(getFieldValidationMessage(currentField));
+                });
+
+                field.addEventListener('input', event => {
+                    event.target.setCustomValidity('');
+                });
+
+                field.addEventListener('change', event => {
+                    event.target.setCustomValidity('');
+                });
+            });
+        }
+
+        function clearUserFormCustomValidity() {
+            if (!adminUserForm) {
+                return;
+            }
+
+            const fields = adminUserForm.querySelectorAll('input, select');
+            fields.forEach(field => field.setCustomValidity(''));
+        }
+
+        function showUserStatus(message, isError = false) {
+            if (!userFormStatus) {
+                return;
+            }
+
+            userFormStatus.style.display = 'block';
+            userFormStatus.textContent = message;
+            userFormStatus.classList.toggle('error-message', isError);
+            userFormStatus.classList.toggle('status-message', !isError);
+        }
+
+        function clearUserStatus() {
+            if (!userFormStatus) {
+                return;
+            }
+
+            userFormStatus.style.display = 'none';
+            userFormStatus.textContent = '';
+            userFormStatus.classList.remove('error-message');
+            userFormStatus.classList.remove('status-message');
+        }
+
+        function normalizeUserRole(role) {
+            return (role || '').toLowerCase() === 'administrador' ? 'administrador' : 'vendedor';
+        }
+
+        function canManageRoles() {
+            return adminUserRole?.dataset.canManageRoles === 'true';
+        }
+
+        function userRoleBadge(role) {
+            const normalizedRole = normalizeUserRole(role);
+            return `<span class="role-badge ${normalizedRole === 'administrador' ? 'admin' : ''}">${normalizedRole === 'administrador' ? 'Administrador' : 'Vendedor'}</span>`;
+        }
+
+        function setCreateMode() {
+            if (!adminUserForm) {
+                return;
+            }
+
+            adminUserForm.reset();
+            clearUserFormCustomValidity();
+            currentEditSnapshot = null;
+            if (adminUserIdInput) {
+                adminUserIdInput.value = '';
+            }
+
+            if (adminUserPassword) {
+                adminUserPassword.required = true;
+            }
+
+            if (adminUserRole) {
+                adminUserRole.disabled = false;
+                if (!canManageRoles()) {
+                    adminUserRole.value = 'vendedor';
+                }
+            }
+
+            if (userPasswordLabel) {
+                userPasswordLabel.textContent = 'Contraseña *';
+            }
+
+            if (userFormTitle) {
+                userFormTitle.innerHTML = '<i class="fas fa-user-plus" style="margin-right: 8px;"></i>Registrar nuevo usuario';
+            }
+
+            if (saveUserButton) {
+                saveUserButton.innerHTML = '<i class="fas fa-save"></i> Guardar usuario';
+            }
+        }
+
+        function setEditMode(row) {
+            if (!row) {
+                return;
+            }
+
+            clearUserFormCustomValidity();
+
+            const normalizedPhone = normalizePhone(row.dataset.userPhone || '');
+
+            if (adminUserIdInput) {
+                adminUserIdInput.value = row.dataset.userId || '';
+            }
+
+            if (adminUserFirstName) {
+                adminUserFirstName.value = row.dataset.userFirstName || '';
+            }
+
+            if (adminUserLastName) {
+                adminUserLastName.value = row.dataset.userLastName || '';
+            }
+
+            if (adminUserEmail) {
+                adminUserEmail.value = row.dataset.userEmail || '';
+            }
+
+            if (adminUserPhone) {
+                adminUserPhone.value = normalizedPhone;
+            }
+
+            if (adminUserRole) {
+                adminUserRole.value = normalizeUserRole(row.dataset.userRole);
+                adminUserRole.disabled = !canManageRoles();
+            }
+
+            if (adminUserPassword) {
+                adminUserPassword.value = '';
+                adminUserPassword.required = false;
+            }
+
+            if (userPasswordLabel) {
+                userPasswordLabel.textContent = 'Contraseña (opcional)';
+            }
+
+            if (userFormTitle) {
+                userFormTitle.innerHTML = '<i class="fas fa-user-edit" style="margin-right: 8px;"></i>Editar usuario';
+            }
+
+            if (saveUserButton) {
+                saveUserButton.innerHTML = '<i class="fas fa-sync-alt"></i> Actualizar usuario';
+            }
+
+            currentEditSnapshot = {
+                firstName: (row.dataset.userFirstName || '').trim(),
+                lastName: (row.dataset.userLastName || '').trim(),
+                email: (row.dataset.userEmail || '').trim().toLowerCase(),
+                phone: normalizedPhone,
+                role: normalizeUserRole(row.dataset.userRole),
+                password: ''
+            };
+        }
+
+        function getCurrentFormSnapshot() {
+            return {
+                firstName: (adminUserFirstName?.value || '').trim(),
+                lastName: (adminUserLastName?.value || '').trim(),
+                email: (adminUserEmail?.value || '').trim().toLowerCase(),
+                phone: normalizePhone(adminUserPhone?.value || ''),
+                role: normalizeUserRole(adminUserRole?.value || ''),
+                password: (adminUserPassword?.value || '').trim()
+            };
+        }
+
+        function hasUserChanges() {
+            if (!currentEditSnapshot) {
+                return true;
+            }
+
+            const currentSnapshot = getCurrentFormSnapshot();
+            return currentSnapshot.firstName !== currentEditSnapshot.firstName
+                || currentSnapshot.lastName !== currentEditSnapshot.lastName
+                || currentSnapshot.email !== currentEditSnapshot.email
+                || currentSnapshot.phone !== currentEditSnapshot.phone
+                || currentSnapshot.role !== currentEditSnapshot.role
+                || currentSnapshot.password.length > 0;
+        }
+
+        function getUserRows() {
+            return Array.from(usersTableBody?.querySelectorAll('tr[data-user-id]') || []);
+        }
+
+        function renderEmptyUsersRow() {
+            if (!usersTableBody) {
+                return;
+            }
+
+            const userRows = getUserRows();
+            let emptyRow = usersTableBody.querySelector('.users-empty-row');
+
+            if (userRows.length === 0) {
+                if (!emptyRow) {
+                    emptyRow = document.createElement('tr');
+                    emptyRow.className = 'users-empty-row';
+                    emptyRow.innerHTML = '<td colspan="5">No hay usuarios registrados con rol administrador o vendedor.</td>';
+                    usersTableBody.appendChild(emptyRow);
+                }
+            } else if (emptyRow) {
+                emptyRow.remove();
+            }
+        }
+
+        function updateUserStats() {
+            const rows = getUserRows();
+            const admins = rows.filter(row => normalizeUserRole(row.dataset.userRole) === 'administrador').length;
+            const sellers = rows.length - admins;
+
+            if (usersTotalCount) {
+                usersTotalCount.textContent = `${rows.length}`;
+            }
+
+            if (usersAdminsCount) {
+                usersAdminsCount.textContent = `${admins}`;
+            }
+
+            if (usersSellersCount) {
+                usersSellersCount.textContent = `${sellers}`;
+            }
+        }
+
+        function upsertUserRow(user) {
+            if (!usersTableBody) {
+                return;
+            }
+
+            const normalizedRole = normalizeUserRole(user.role);
+            const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+            let row = usersTableBody.querySelector(`tr[data-user-id="${user.id}"]`);
+
+            if (!row) {
+                row = document.createElement('tr');
+                usersTableBody.prepend(row);
+            }
+
+            row.dataset.userId = user.id;
+            row.dataset.userRole = normalizedRole;
+            row.dataset.userName = fullName;
+            row.dataset.userEmail = user.email || '';
+            row.dataset.userPhone = user.phone || '';
+            row.dataset.userFirstName = user.firstName || '';
+            row.dataset.userLastName = user.lastName || '';
+            row.innerHTML = `
+                <td class="user-name">${fullName || '-'}</td>
+                <td class="user-email">${user.email || '-'}</td>
+                <td class="user-phone">${user.phone || '-'}</td>
+                <td class="user-role">${userRoleBadge(normalizedRole)}</td>
+                <td class="action-icons">
+                    <button type="button" class="link-icon user-edit-btn" title="Editar"><i class="fas fa-edit"></i></button>
+                    <button type="button" class="link-icon user-delete-btn" title="Eliminar"><i class="fas fa-trash-alt"></i></button>
+                </td>`;
+
+            renderEmptyUsersRow();
+            updateUserStats();
+            applyUserFilters();
+        }
+
+        function applyUserFilters(resetPage = true) {
+            const searchTerm = (userSearchInput?.value || '').trim().toLowerCase();
+            const role = normalizeUserRole(userRoleFilter?.value || '');
+            const hasRoleFilter = !!(userRoleFilter?.value || '').trim();
+
+            const rows = getUserRows();
+            const filteredRows = rows.filter(row => {
+                const rowName = (row.dataset.userName || '').toLowerCase();
+                const rowEmail = (row.dataset.userEmail || '').toLowerCase();
+                const rowRole = normalizeUserRole(row.dataset.userRole);
+                const matchesSearch = !searchTerm || rowName.includes(searchTerm) || rowEmail.includes(searchTerm);
+                const matchesRole = !hasRoleFilter || rowRole === role;
+
+                return matchesSearch && matchesRole;
+            });
+
+            if (resetPage) {
+                usersCurrentPage = 1;
+            }
+
+            const { totalPages, safePage, pagedRows } = paginateRows(filteredRows, usersCurrentPage, clientPageSize);
+            usersCurrentPage = safePage;
+
+            rows.forEach(row => {
+                row.style.display = 'none';
+            });
+
+            pagedRows.forEach(row => {
+                row.style.display = '';
+            });
+
+            const hasDataRows = rows.length > 0;
+            let emptyRow = usersTableBody?.querySelector('.users-empty-row');
+            if (hasDataRows && filteredRows.length === 0) {
+                if (!emptyRow) {
+                    emptyRow = document.createElement('tr');
+                    emptyRow.className = 'users-empty-row';
+                    emptyRow.innerHTML = '<td colspan="5">No hay usuarios que coincidan con los filtros.</td>';
+                    usersTableBody?.appendChild(emptyRow);
+                } else {
+                    emptyRow.innerHTML = '<td colspan="5">No hay usuarios que coincidan con los filtros.</td>';
+                }
+            } else if (hasDataRows && emptyRow) {
+                emptyRow.remove();
+            }
+
+            if (usersPaginationBar && usersPrevPage && usersNextPage && usersPageInfo) {
+                usersPaginationBar.hidden = filteredRows.length <= clientPageSize;
+                usersPageInfo.textContent = `Página ${usersCurrentPage} de ${totalPages}`;
+                usersPrevPage.disabled = usersCurrentPage <= 1;
+                usersNextPage.disabled = usersCurrentPage >= totalPages;
+            }
+        }
+
+        async function submitUserForm(event) {
+            event.preventDefault();
+            if (!adminUserForm) {
+                return;
+            }
+
+            clearUserStatus();
+
+            const isEditMode = !!adminUserIdInput?.value;
+            if (isEditMode && !hasUserChanges()) {
+                const continueWithoutChanges = window.confirm('No se ha hecho ningún cambio. ¿Deseas continuar con la actualización?');
+                if (!continueWithoutChanges) {
+                    showUserStatus('Realiza los cambios que necesites y vuelve a presionar actualizar.', true);
+                    return;
+                }
+
+                setCreateMode();
+                showUserStatus('No se realizaron cambios. El usuario mantiene su información actual.');
+                return;
+            }
+
+            if (!adminUserForm.checkValidity()) {
+                const invalidField = adminUserForm.querySelector(':invalid');
+                const message = getFieldValidationMessage(invalidField);
+                showUserStatus(message, true);
+                invalidField?.reportValidity();
+                return;
+            }
+
+            const endpoint = isEditMode ? adminUserForm.dataset.updateUrl : adminUserForm.dataset.createUrl;
+            const formData = new FormData(adminUserForm);
+
+            if (!canManageRoles()) {
+                const preservedRole = isEditMode
+                    ? (currentEditSnapshot?.role || normalizeUserRole(adminUserRole?.value || 'vendedor'))
+                    : 'vendedor';
+                formData.set('Role', preservedRole);
+            }
+
+            saveUserButton?.setAttribute('disabled', 'disabled');
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData
+                });
+
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch {
+                    payload = { succeeded: false, errorMessage: 'No se pudo completar el registro. Verifica tu sesión e inténtalo de nuevo.' };
+                }
+
+                if (!response.ok || !payload.succeeded) {
+                    showUserStatus(payload.errorMessage || 'No se pudo guardar el usuario.', true);
+                    return;
+                }
+
+                const updatedRole = normalizeUserRole(payload.user?.role || '');
+                const existingRow = payload.user?.id
+                    ? usersTableBody?.querySelector(`tr[data-user-id="${payload.user.id}"]`)
+                    : null;
+                const previousEmail = (existingRow?.dataset.userEmail || currentEditSnapshot?.email || '').trim().toLowerCase();
+                const previousRole = normalizeUserRole(existingRow?.dataset.userRole || currentEditSnapshot?.role || '');
+                const affectsAdminPermissions = previousRole !== updatedRole
+                    && (updatedRole === 'administrador' || previousRole === 'administrador');
+
+                upsertUserRow(payload.user);
+                if (payload.notification) {
+                    appendNotification(payload.notification);
+                    updateNotificationCounter(payload.unreadCount ?? 0);
+                }
+
+                setCreateMode();
+                showUserStatus(isEditMode ? 'Usuario actualizado correctamente.' : 'Usuario creado correctamente.');
+
+                if (affectsAdminPermissions && document.getElementById('adminPermissionsPanel')) {
+                    syncPermissionPanelForRoleChange(payload.user, previousRole, updatedRole, previousEmail);
+                }
+            } catch {
+                showUserStatus('No se pudo completar la operación con Supabase.', true);
+            } finally {
+                saveUserButton?.removeAttribute('disabled');
+            }
+        }
+
+        async function deleteUser(row) {
+            if (!row || !usersTable?.dataset.deleteUrl || !antiForgeryToken) {
+                return;
+            }
+
+            const userId = row.dataset.userId;
+            if (!userId) {
+                return;
+            }
+
+            if (!window.confirm('¿Eliminar este usuario?')) {
+                return;
+            }
+
+            clearUserStatus();
+
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', antiForgeryToken);
+            formData.append('id', userId);
+
+            try {
+                const response = await fetch(usersTable.dataset.deleteUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData
+                });
+
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch {
+                    payload = { succeeded: false, errorMessage: 'No se pudo eliminar el usuario. Verifica tu sesión e inténtalo de nuevo.' };
+                }
+
+                if (!response.ok || !payload.succeeded) {
+                    showUserStatus(payload.errorMessage || 'No se pudo eliminar el usuario.', true);
+                    return;
+                }
+
+                const removedRole = normalizeUserRole(row.dataset.userRole || '');
+
+                row.remove();
+                renderEmptyUsersRow();
+                updateUserStats();
+                applyUserFilters();
+                setCreateMode();
+                showUserStatus('Usuario eliminado correctamente.');
+                if (payload.notification) {
+                    appendNotification(payload.notification);
+                    updateNotificationCounter(payload.unreadCount ?? 0);
+                }
+
+                if (removedRole === 'administrador' && document.getElementById('adminPermissionsPanel')) {
+                    syncPermissionPanelForRoleChange(
+                        { email: row.dataset.userEmail, firstName: row.dataset.userFirstName, lastName: row.dataset.userLastName },
+                        removedRole,
+                        'vendedor',
+                        row.dataset.userEmail || '');
+                }
+            } catch {
+                showUserStatus('No se pudo completar la operación con Supabase.', true);
+            }
+        }
+
+        adminUserForm?.addEventListener('submit', submitUserForm);
+
+        cancelUserEditButton?.addEventListener('click', () => {
+            setCreateMode();
+            clearUserStatus();
+        });
+
+        usersTableBody?.addEventListener('click', async event => {
+            const button = event.target.closest('button');
+            if (!button) {
+                return;
+            }
+
+            const row = button.closest('tr[data-user-id]');
+            if (!row) {
+                return;
+            }
+
+            if (button.classList.contains('user-edit-btn')) {
+                setEditMode(row);
+                clearUserStatus();
+                window.scrollTo({ top: adminUserForm?.offsetTop ? adminUserForm.offsetTop - 120 : 0, behavior: 'smooth' });
+                return;
+            }
+
+            if (button.classList.contains('user-delete-btn')) {
+                await deleteUser(row);
+            }
+        });
+
+        userSearchInput?.addEventListener('input', () => applyUserFilters(true));
+        userRoleFilter?.addEventListener('change', () => applyUserFilters(true));
+        usersPrevPage?.addEventListener('click', () => {
+            usersCurrentPage -= 1;
+            applyUserFilters(false);
+        });
+        usersNextPage?.addEventListener('click', () => {
+            usersCurrentPage += 1;
+            applyUserFilters(false);
+        });
+        adminPermissionSearchInput?.addEventListener('input', applyAdminPermissionFilters);
+        adminPermissionSelect?.addEventListener('change', applyAdminPermissionFilters);
+        clearUserFiltersButton?.addEventListener('click', () => {
+            if (userSearchInput) {
+                userSearchInput.value = '';
+            }
+
+            if (userRoleFilter) {
+                userRoleFilter.value = '';
+            }
+
+            applyUserFilters(true);
+        });
+
+        notificationToggle?.addEventListener('click', event => {
+            event.stopPropagation();
+            notificationPanel?.classList.toggle('open');
+        });
+
+        notificationPanel?.addEventListener('click', event => {
+            event.stopPropagation();
+            const button = event.target.closest('.notification-read-btn');
+            if (!button) {
+                return;
+            }
+
+            const item = button.closest('.notification-item');
+            if (!item) {
+                return;
+            }
+
+            markNotificationAsRead(item);
+        });
+
+        document.addEventListener('click', () => {
+            notificationPanel?.classList.remove('open');
+        });
+
+        clearNotificationsButton?.addEventListener('click', clearNotifications);
+
+        setCreateMode();
+        wireUserFormValidation();
+        renderEmptyUsersRow();
+        updateUserStats();
+        applyCategoryFilters(true);
+        applyProductFilters(true);
+        applyUserFilters(true);
+        applyAdminPermissionFilters();
+        wirePermissionToggles();
+        applyInventoryFilters();
+        updateNotificationCounter(@Model.UnreadNotificationsCount);
+        ensureNotificationEmptyState();
+    })();
+</script>
