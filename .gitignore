@@ -41,6 +41,9 @@ packages/
 secrets.json
 appsettings.Development.json
 appsettings.Local.json
+Ferre/appsettings.json
+Ferre/appsettings.Development.json
+Ferre/appsettings.Local.json
 
 # ------------------------------
 # OS files
