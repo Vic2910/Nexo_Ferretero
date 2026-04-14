@@ -162,8 +162,19 @@
                 <button type="button" id="closeSupportPanel" aria-label="Cerrar reportes">×</button>
             </div>
             <div class="support-panel-body">
+                <section class="support-inbox-section">
+                    <h4>Mi bandeja</h4>
+                    <div id="clientSupportInbox"
+                         class="support-inbox-list"
+                         data-load-url="@Url.Action("GetClientSupportInbox", "Home")"
+                         data-reply-url="@Url.Action("ReplySupportConversation", "Home")">
+                        <p class="client-tools-empty">Aún no tienes reportes o consultas registradas.</p>
+                    </div>
+                </section>
+
                 <form asp-action="ContactStore" asp-controller="Home" method="post" id="contactSupportForm" class="contact-support-form">
                     @Html.AntiForgeryToken()
+                    <h4>Nueva consulta</h4>
                     <div class="contact-support-grid">
                         <label>
                             Nombre

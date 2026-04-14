@@ -78,6 +78,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const contactSupportForm = document.getElementById('contactSupportForm');
     const contactSupportMessage = document.getElementById('contactSupportMessage');
     const contactSupportSubmitButton = document.getElementById('contactSupportSubmitButton');
+    const clientSupportInbox = document.getElementById('clientSupportInbox');
+    const clientSupportInboxLoadUrl = `${clientSupportInbox?.dataset.loadUrl || ''}`;
+    const clientSupportInboxReplyUrl = `${clientSupportInbox?.dataset.replyUrl || ''}`;
     const paymentModalOverlay = document.getElementById('paymentModalOverlay');
     const closePaymentModalButton = document.getElementById('closePaymentModal');
     const cancelPaymentButton = document.getElementById('cancelPaymentButton');
@@ -240,6 +243,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (supportOverlay) {
             supportOverlay.hidden = false;
         }
+
+        loadClientSupportInbox();
     }
 
     function closeSupportPanel() {
@@ -1270,6 +1275,135 @@ document.addEventListener('DOMContentLoaded', () => {
         contactSupportMessage.classList.toggle('success', !isError && !!normalized);
     }
 
+    function supportStatusClass(status) {
+        return `${status || ''}`.toLowerCase() === 'resuelto' ? 'resolved' : 'pending';
+    }
+
+    function supportStatusLabel(status) {
+        return `${status || ''}`.toLowerCase() === 'resuelto' ? 'Resuelto' : 'Pendiente';
+    }
+
+    function renderClientSupportInbox(conversations) {
+        if (!clientSupportInbox) {
+            return;
+        }
+
+        if (!Array.isArray(conversations) || !conversations.length) {
+            clientSupportInbox.innerHTML = '<p class="client-tools-empty">Aún no tienes reportes o consultas registradas.</p>';
+            return;
+        }
+
+        clientSupportInbox.innerHTML = conversations.map(conversation => {
+            const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+            return `
+                <article class="support-thread-card">
+                    <header class="support-thread-head">
+                        <strong>${escapeHtml(conversation.subject || 'Sin asunto')}</strong>
+                        <span class="support-thread-status ${supportStatusClass(conversation.status)}">${supportStatusLabel(conversation.status)}</span>
+                    </header>
+                    <div class="support-thread-meta">
+                        <span>Actualizado: ${formatDateTime(conversation.updatedAtUtc)}</span>
+                    </div>
+                    <div class="support-thread-messages">
+                        ${messages.filter(item => !item.isSystemEvent).map(item => `
+                            <div class="support-thread-message ${`${item.senderRole || ''}`.toLowerCase() === 'administrador' ? 'admin' : 'client'}">
+                                <div class="support-thread-message-head">
+                                    <strong>${escapeHtml(item.senderName || 'Usuario')}</strong>
+                                    <small>${formatDateTime(item.createdAtUtc)}</small>
+                                </div>
+                                <p>${escapeHtml(item.message || '')}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <form class="support-reply-form" data-conversation-id="${escapeHtml(conversation.conversationId)}">
+                        <textarea name="Message" rows="3" maxlength="1500" placeholder="Escribe una respuesta para esta conversación" required></textarea>
+                        <button type="submit" class="profile-save-btn">Responder</button>
+                    </form>
+                </article>
+            `;
+        }).join('');
+    }
+
+    async function loadClientSupportInbox() {
+        if (!isAuthenticated || !clientSupportInbox || !clientSupportInboxLoadUrl) {
+            return;
+        }
+
+        try {
+            const response = await fetch(clientSupportInboxLoadUrl, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload?.succeeded) {
+                return;
+            }
+
+            renderClientSupportInbox(payload.conversations || []);
+        } catch {
+            // No bloquear la UI por fallas transitorias.
+        }
+    }
+
+    clientSupportInbox?.addEventListener('submit', async event => {
+        const replyForm = event.target.closest('.support-reply-form');
+        if (!replyForm) {
+            return;
+        }
+
+        event.preventDefault();
+        if (!clientSupportInboxReplyUrl) {
+            return;
+        }
+
+        const conversationId = `${replyForm.dataset.conversationId || ''}`.trim();
+        const textarea = replyForm.querySelector('textarea[name="Message"]');
+        const submitButton = replyForm.querySelector('button[type="submit"]');
+        const replyMessage = `${textarea?.value || ''}`.trim();
+        if (!conversationId || !replyMessage) {
+            return;
+        }
+
+        submitButton?.setAttribute('disabled', 'disabled');
+
+        try {
+            const formData = new FormData();
+            formData.append('ConversationId', conversationId);
+            formData.append('Message', replyMessage);
+            const antiForgeryToken = contactSupportForm?.querySelector('input[name="__RequestVerificationToken"]')?.value;
+            if (antiForgeryToken) {
+                formData.append('__RequestVerificationToken', antiForgeryToken);
+            }
+
+            const response = await fetch(clientSupportInboxReplyUrl, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload?.succeeded) {
+                setContactSupportMessage(payload?.errorMessage || 'No se pudo enviar tu respuesta.', true);
+                return;
+            }
+
+            if (textarea) {
+                textarea.value = '';
+            }
+
+            setContactSupportMessage(payload.successMessage || 'Tu respuesta fue enviada correctamente.');
+            await loadClientSupportInbox();
+        } catch {
+            setContactSupportMessage('No se pudo enviar tu respuesta.', true);
+        } finally {
+            submitButton?.removeAttribute('disabled');
+        }
+    });
+
     contactSupportForm?.addEventListener('submit', async event => {
         event.preventDefault();
         setContactSupportMessage('');
@@ -1312,6 +1446,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (nameField) {
                 nameField.value = `${window.portadaData?.userDisplayName || ''}`;
             }
+
+            await loadClientSupportInbox();
         } catch {
             setContactSupportMessage('No se pudo enviar tu consulta.', true);
         } finally {
@@ -1331,5 +1467,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     renderPurchaseHistory();
     loadPurchaseHistory();
+    loadClientSupportInbox();
     window.setInterval(refreshCatalogProducts, 15000);
 });

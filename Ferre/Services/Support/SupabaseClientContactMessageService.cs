@@ -25,11 +25,15 @@ public sealed class SupabaseClientContactMessageService : IClientContactMessageS
         var row = new ClientContactMessageRow
         {
             Id = message.Id == Guid.Empty ? Guid.NewGuid() : message.Id,
+            ConversationId = message.ConversationId == Guid.Empty ? (message.Id == Guid.Empty ? Guid.NewGuid() : message.Id) : message.ConversationId,
             CreatedAtUtc = message.CreatedAtUtc == default ? DateTime.UtcNow : message.CreatedAtUtc,
             Name = message.Name,
             Email = message.Email,
             Subject = message.Subject,
-            Message = message.Message
+            Message = message.Message,
+            SenderRole = string.IsNullOrWhiteSpace(message.SenderRole) ? "cliente" : message.SenderRole.Trim().ToLowerInvariant(),
+            Status = string.IsNullOrWhiteSpace(message.Status) ? "pendiente" : message.Status.Trim().ToLowerInvariant(),
+            IsSystemEvent = message.IsSystemEvent
         };
 
         await _client.From<ClientContactMessageRow>().Insert(row).ConfigureAwait(false);
@@ -56,11 +60,15 @@ public sealed class SupabaseClientContactMessageService : IClientContactMessageS
                 .Select(x => new ClientContactMessage
                 {
                     Id = x.Id,
+                    ConversationId = x.ConversationId ?? x.Id,
                     CreatedAtUtc = x.CreatedAtUtc,
                     Name = x.Name,
                     Email = x.Email,
                     Subject = x.Subject,
-                    Message = x.Message
+                    Message = x.Message,
+                    SenderRole = string.IsNullOrWhiteSpace(x.SenderRole) ? "cliente" : x.SenderRole,
+                    Status = string.IsNullOrWhiteSpace(x.Status) ? "pendiente" : x.Status,
+                    IsSystemEvent = x.IsSystemEvent ?? false
                 })
                 .ToList();
         }
@@ -79,6 +87,9 @@ public sealed class SupabaseClientContactMessageService : IClientContactMessageS
         [Column("created_at_utc")]
         public DateTime CreatedAtUtc { get; set; }
 
+        [Column("conversation_id")]
+        public Guid? ConversationId { get; set; }
+
         [Column("name")]
         public string Name { get; set; } = string.Empty;
 
@@ -90,5 +101,14 @@ public sealed class SupabaseClientContactMessageService : IClientContactMessageS
 
         [Column("message")]
         public string Message { get; set; } = string.Empty;
+
+        [Column("sender_role")]
+        public string? SenderRole { get; set; }
+
+        [Column("status")]
+        public string? Status { get; set; }
+
+        [Column("is_system_event")]
+        public bool? IsSystemEvent { get; set; }
     }
 }

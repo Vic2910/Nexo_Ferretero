@@ -42,6 +42,8 @@ namespace Ferre.Controllers
         private readonly PayPalSettings _payPalSettings;
 
         private const string ProductImagesBucket = "Imagenes";
+        private const string SupportStatusPending = "pendiente";
+        private const string SupportStatusResolved = "resuelto";
 
         public HomeController(
             ILogger<HomeController> logger,
@@ -862,11 +864,15 @@ namespace Ferre.Controllers
             var contactMessage = new ClientContactMessage
             {
                 Id = Guid.NewGuid(),
+                ConversationId = Guid.NewGuid(),
                 CreatedAtUtc = DateTime.UtcNow,
                 Name = cleanName,
                 Email = sessionEmail,
                 Subject = cleanSubject,
-                Message = cleanMessage
+                Message = cleanMessage,
+                SenderRole = "cliente",
+                Status = SupportStatusPending,
+                IsSystemEvent = false
             };
 
             await _clientContactMessageService.SaveAsync(contactMessage);
@@ -880,11 +886,195 @@ namespace Ferre.Controllers
 
             if (isAjaxRequest)
             {
-                return Json(new { succeeded = true, successMessage = "Tu consulta fue enviada correctamente. Te responderemos pronto." });
+                return Json(new
+                {
+                    succeeded = true,
+                    successMessage = "Tu consulta fue enviada correctamente. Te responderemos pronto.",
+                    conversationId = contactMessage.ConversationId
+                });
             }
 
             TempData["SuccessMessage"] = "Tu consulta fue enviada correctamente. Te responderemos pronto.";
             return RedirectToAction(nameof(Portada));
+        }
+
+        [HttpGet]
+        [RequireSession]
+        public async Task<IActionResult> GetClientSupportInbox()
+        {
+            var sessionEmail = HttpContext.Session.GetString("UserEmail") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(sessionEmail))
+            {
+                return Unauthorized(new { succeeded = false, errorMessage = "Debes iniciar sesión para ver tu bandeja." });
+            }
+
+            var supportMessages = await _clientContactMessageService.GetAllAsync();
+            var conversations = BuildSupportConversations(supportMessages)
+                .Where(x => string.Equals(x.ClientEmail, sessionEmail, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            return Json(new { succeeded = true, conversations });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [RequireSession]
+        public async Task<IActionResult> ReplySupportConversation([FromForm] SupportReplyRequest request)
+        {
+            var isAjaxRequest = string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
+            if (!ModelState.IsValid || request.ConversationId == Guid.Empty)
+            {
+                var validationMessage = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))
+                    ?? "No se pudo enviar la respuesta.";
+
+                if (isAjaxRequest)
+                {
+                    return BadRequest(new { succeeded = false, errorMessage = validationMessage });
+                }
+
+                TempData["ErrorMessage"] = validationMessage;
+                return RedirectToAction(nameof(Portada));
+            }
+
+            var sessionEmail = HttpContext.Session.GetString("UserEmail") ?? string.Empty;
+            var allMessages = await _clientContactMessageService.GetAllAsync();
+            var conversations = BuildSupportConversations(allMessages);
+            var conversation = conversations.FirstOrDefault(x => x.ConversationId == request.ConversationId);
+
+            if (conversation is null || !string.Equals(conversation.ClientEmail, sessionEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { succeeded = false, errorMessage = "No se encontró la conversación indicada." });
+            }
+
+            var cleanMessage = request.Message.Trim();
+            var senderName = HttpContext.Session.GetString("UserName") ?? conversation.ClientName;
+            var reply = new ClientContactMessage
+            {
+                Id = Guid.NewGuid(),
+                ConversationId = conversation.ConversationId,
+                CreatedAtUtc = DateTime.UtcNow,
+                Name = string.IsNullOrWhiteSpace(senderName) ? conversation.ClientName : senderName,
+                Email = conversation.ClientEmail,
+                Subject = conversation.Subject,
+                Message = cleanMessage,
+                SenderRole = "cliente",
+                Status = SupportStatusPending,
+                IsSystemEvent = false
+            };
+
+            await _clientContactMessageService.SaveAsync(reply);
+
+            if (isAjaxRequest)
+            {
+                return Json(new { succeeded = true, successMessage = "Tu respuesta fue enviada correctamente." });
+            }
+
+            TempData["SuccessMessage"] = "Tu respuesta fue enviada correctamente.";
+            return RedirectToAction(nameof(Portada));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [RequireSession("administrador")]
+        public async Task<IActionResult> ReplySupportConversationFromAdmin([FromForm] SupportReplyRequest request, string? supportDate)
+        {
+            if (!CanAccessAdminArea(AdminAreas.Support))
+            {
+                TempData["ErrorMessage"] = "No tienes permisos para responder mensajes de soporte.";
+                return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+            }
+
+            if (!ModelState.IsValid || request.ConversationId == Guid.Empty)
+            {
+                TempData["ErrorMessage"] = "Debes escribir una respuesta válida.";
+                return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+            }
+
+            var allMessages = await _clientContactMessageService.GetAllAsync();
+            var conversation = BuildSupportConversations(allMessages).FirstOrDefault(x => x.ConversationId == request.ConversationId);
+            if (conversation is null)
+            {
+                TempData["ErrorMessage"] = "No se encontró la conversación de soporte.";
+                return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+            }
+
+            var cleanMessage = request.Message.Trim();
+            var adminName = HttpContext.Session.GetString("UserName") ?? "Administrador";
+            await _clientContactMessageService.SaveAsync(new ClientContactMessage
+            {
+                Id = Guid.NewGuid(),
+                ConversationId = conversation.ConversationId,
+                CreatedAtUtc = DateTime.UtcNow,
+                Name = adminName,
+                Email = conversation.ClientEmail,
+                Subject = conversation.Subject,
+                Message = cleanMessage,
+                SenderRole = "administrador",
+                Status = conversation.Status,
+                IsSystemEvent = false
+            });
+
+            TempData["SuccessMessage"] = "Respuesta enviada al cliente.";
+            return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [RequireSession("administrador")]
+        public async Task<IActionResult> UpdateSupportConversationStatus(Guid conversationId, string status, string? supportDate)
+        {
+            if (!CanAccessAdminArea(AdminAreas.Support))
+            {
+                TempData["ErrorMessage"] = "No tienes permisos para gestionar estados de soporte.";
+                return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+            }
+
+            if (conversationId == Guid.Empty)
+            {
+                TempData["ErrorMessage"] = "La conversación seleccionada no es válida.";
+                return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+            }
+
+            var normalizedStatus = NormalizeSupportStatus(status);
+            if (normalizedStatus is null)
+            {
+                TempData["ErrorMessage"] = "El estado indicado no es válido.";
+                return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+            }
+
+            var allMessages = await _clientContactMessageService.GetAllAsync();
+            var conversation = BuildSupportConversations(allMessages).FirstOrDefault(x => x.ConversationId == conversationId);
+            if (conversation is null)
+            {
+                TempData["ErrorMessage"] = "No se encontró la conversación de soporte.";
+                return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
+            }
+
+            var adminName = HttpContext.Session.GetString("UserName") ?? "Administrador";
+            await _clientContactMessageService.SaveAsync(new ClientContactMessage
+            {
+                Id = Guid.NewGuid(),
+                ConversationId = conversation.ConversationId,
+                CreatedAtUtc = DateTime.UtcNow,
+                Name = adminName,
+                Email = conversation.ClientEmail,
+                Subject = conversation.Subject,
+                Message = normalizedStatus == SupportStatusResolved
+                    ? "Estado actualizado a Resuelto."
+                    : "Estado actualizado a Pendiente.",
+                SenderRole = "administrador",
+                Status = normalizedStatus,
+                IsSystemEvent = true
+            });
+
+            TempData["SuccessMessage"] = normalizedStatus == SupportStatusResolved
+                ? "La conversación fue marcada como resuelta."
+                : "La conversación fue marcada como pendiente.";
+
+            return RedirectToAction(nameof(Admin), new { section = "support", supportDate });
         }
 
         private string? ValidatePaymentData(CartCheckoutRequest? request)
@@ -1398,6 +1588,7 @@ namespace Ferre.Controllers
             var supportDateFilter = supportDate.HasValue ? DateOnly.FromDateTime(supportDate.Value.Date) : (DateOnly?)null;
             var adminOrders = await _clientPurchaseService.GetAllPurchasesAsync(orderDateFilter);
             var supportMessages = await _clientContactMessageService.GetAllAsync(supportDateFilter);
+            var supportConversations = BuildSupportConversations(supportMessages);
             var model = BuildAdminViewModel(
                 allCategories,
                 allProducts,
@@ -1417,7 +1608,12 @@ namespace Ferre.Controllers
                 permissionsByEmail);
 
             ViewBag.AdminOrders = adminOrders;
-            ViewBag.SupportMessages = supportMessages;
+            ViewBag.SupportPendingConversations = supportConversations
+                .Where(x => string.Equals(x.Status, SupportStatusPending, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            ViewBag.SupportResolvedConversations = supportConversations
+                .Where(x => string.Equals(x.Status, SupportStatusResolved, StringComparison.OrdinalIgnoreCase))
+                .ToList();
             ViewBag.OrdersDateFilter = ordersDate?.ToString("yyyy-MM-dd");
             ViewBag.SupportDateFilter = supportDate?.ToString("yyyy-MM-dd");
 
@@ -1859,6 +2055,56 @@ namespace Ferre.Controllers
             TempData["SuccessMessage"] = "Producto eliminado correctamente.";
             _notificationService.Add("Producto eliminado correctamente.");
             return RedirectToAdminProducts(search, sort, page, productSearch, productSort, productPage);
+        }
+
+        private List<SupportConversationViewModel> BuildSupportConversations(IReadOnlyList<ClientContactMessage> messages)
+        {
+            return messages
+                .GroupBy(message => message.ConversationId == Guid.Empty ? message.Id : message.ConversationId)
+                .Select(group =>
+                {
+                    var ordered = group.OrderBy(x => x.CreatedAtUtc).ToList();
+                    var firstClientMessage = ordered
+                        .FirstOrDefault(x => !x.IsSystemEvent && string.Equals(x.SenderRole, "cliente", StringComparison.OrdinalIgnoreCase))
+                        ?? ordered.First();
+                    var lastMessage = ordered.Last();
+                    var status = NormalizeSupportStatus(lastMessage.Status) ?? SupportStatusPending;
+
+                    return new SupportConversationViewModel
+                    {
+                        ConversationId = group.Key,
+                        Subject = firstClientMessage.Subject,
+                        ClientName = firstClientMessage.Name,
+                        ClientEmail = firstClientMessage.Email,
+                        Status = status,
+                        CreatedAtUtc = ordered.First().CreatedAtUtc,
+                        UpdatedAtUtc = lastMessage.CreatedAtUtc,
+                        Messages = ordered
+                            .Select(message => new SupportConversationMessageViewModel
+                            {
+                                Id = message.Id,
+                                CreatedAtUtc = message.CreatedAtUtc,
+                                SenderRole = string.IsNullOrWhiteSpace(message.SenderRole) ? "cliente" : message.SenderRole,
+                                SenderName = message.Name,
+                                Message = message.Message,
+                                IsSystemEvent = message.IsSystemEvent
+                            })
+                            .ToList()
+                    };
+                })
+                .OrderByDescending(conversation => conversation.UpdatedAtUtc)
+                .ToList();
+        }
+
+        private string? NormalizeSupportStatus(string? status)
+        {
+            var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized switch
+            {
+                SupportStatusPending => SupportStatusPending,
+                SupportStatusResolved => SupportStatusResolved,
+                _ => null
+            };
         }
 
         private CategoriesIndexViewModel BuildAdminViewModel(

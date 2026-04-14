@@ -21,7 +21,8 @@
     var canAccessSupport = !Model.CurrentAdminPermissions.TryGetValue(AdminAreas.Support, out var supportEnabled) || supportEnabled;
     var canManageUserRoles = AdminAreas.All.All(area => Model.CurrentAdminPermissions.TryGetValue(area, out var enabled) && enabled);
     var adminOrders = ViewBag.AdminOrders as IReadOnlyList<ClientPurchaseReceipt> ?? Array.Empty<ClientPurchaseReceipt>();
-    var supportMessages = ViewBag.SupportMessages as IReadOnlyList<ClientContactMessage> ?? Array.Empty<ClientContactMessage>();
+    var supportPendingConversations = ViewBag.SupportPendingConversations as IReadOnlyList<SupportConversationViewModel> ?? Array.Empty<SupportConversationViewModel>();
+    var supportResolvedConversations = ViewBag.SupportResolvedConversations as IReadOnlyList<SupportConversationViewModel> ?? Array.Empty<SupportConversationViewModel>();
     var ordersDateFilter = ViewBag.OrdersDateFilter as string ?? string.Empty;
     var supportDateFilter = ViewBag.SupportDateFilter as string ?? string.Empty;
 }
@@ -783,6 +784,124 @@
             font-size: 0.9rem;
             text-align: center;
             padding: 1rem;
+        }
+
+        .support-admin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1rem;
+        }
+
+        .support-admin-column {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 0.9rem;
+            display: grid;
+            gap: 0.8rem;
+        }
+
+        .support-admin-column-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .support-admin-column-head h3 {
+            margin: 0;
+            font-size: 1rem;
+            color: #1f2937;
+        }
+
+        .support-admin-column-head span {
+            background: #f1f5f9;
+            border-radius: 999px;
+            padding: 0.15rem 0.6rem;
+            font-weight: 700;
+            color: #334155;
+            font-size: 0.8rem;
+        }
+
+        .support-admin-empty {
+            margin: 0;
+            color: #64748b;
+            font-size: 0.88rem;
+        }
+
+        .support-admin-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 0.75rem;
+            display: grid;
+            gap: 0.6rem;
+        }
+
+        .support-admin-meta {
+            display: grid;
+            gap: 0.2rem;
+        }
+
+        .support-admin-meta strong {
+            color: #0f172a;
+            font-size: 0.9rem;
+        }
+
+        .support-admin-meta small {
+            color: #64748b;
+            font-size: 0.76rem;
+        }
+
+        .support-admin-thread {
+            display: grid;
+            gap: 0.45rem;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
+        .support-admin-thread-item {
+            border-radius: 10px;
+            padding: 0.45rem 0.55rem;
+            display: grid;
+            gap: 0.25rem;
+            font-size: 0.8rem;
+        }
+
+        .support-admin-thread-item.client {
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+        }
+
+        .support-admin-thread-item.admin {
+            border: 1px solid #fed7aa;
+            background: #fff7ed;
+        }
+
+        .support-admin-thread-item > div {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.4rem;
+        }
+
+        .support-admin-thread-item p {
+            margin: 0;
+            white-space: pre-wrap;
+        }
+
+        .support-admin-reply-form {
+            display: grid;
+            gap: 0.45rem;
+        }
+
+        .support-admin-reply-form textarea {
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            padding: 0.5rem 0.62rem;
+            resize: vertical;
+        }
+
+        .support-admin-actions {
+            display: flex;
+            justify-content: flex-end;
         }
     </style>
 }
@@ -1829,38 +1948,111 @@
                 </form>
 
                 <section class="table-section">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Fecha</th>
-                                <th>Nombre</th>
-                                <th>Correo</th>
-                                <th>Asunto</th>
-                                <th>Mensaje</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (!supportMessages.Any())
+                    <div class="support-admin-grid">
+                        <article class="support-admin-column">
+                            <header class="support-admin-column-head">
+                                <h3>Pendientes</h3>
+                                <span>@supportPendingConversations.Count</span>
+                            </header>
+
+                            @if (!supportPendingConversations.Any())
                             {
-                                <tr>
-                                    <td colspan="5">No hay mensajes para el criterio seleccionado.</td>
-                                </tr>
+                                <p class="support-admin-empty">No hay conversaciones pendientes.</p>
                             }
                             else
                             {
-                                foreach (var message in supportMessages)
+                                foreach (var conversation in supportPendingConversations)
                                 {
-                                    <tr>
-                                        <td>@message.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                                        <td>@message.Name</td>
-                                        <td>@message.Email</td>
-                                        <td>@message.Subject</td>
-                                        <td>@message.Message</td>
-                                    </tr>
+                                    <div class="support-admin-card">
+                                        <div class="support-admin-meta">
+                                            <strong>@conversation.Subject</strong>
+                                            <small>@conversation.ClientName · @conversation.ClientEmail</small>
+                                            <small>Actualizado: @conversation.UpdatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
+                                        </div>
+
+                                        <div class="support-admin-thread">
+                                            @foreach (var threadMessage in conversation.Messages.Where(x => !x.IsSystemEvent))
+                                            {
+                                                var isAdminMessage = string.Equals(threadMessage.SenderRole, "administrador", StringComparison.OrdinalIgnoreCase);
+                                                <div class="support-admin-thread-item @(isAdminMessage ? "admin" : "client")">
+                                                    <div>
+                                                        <strong>@threadMessage.SenderName</strong>
+                                                        <small>@threadMessage.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
+                                                    </div>
+                                                    <p>@threadMessage.Message</p>
+                                                </div>
+                                            }
+                                        </div>
+
+                                        <form asp-action="ReplySupportConversationFromAdmin" method="post" class="support-admin-reply-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="conversationId" value="@conversation.ConversationId" />
+                                            <input type="hidden" name="supportDate" value="@supportDateFilter" />
+                                            <textarea name="Message" rows="3" maxlength="1500" required placeholder="Responder al cliente"></textarea>
+                                            <div class="support-admin-actions">
+                                                <button type="submit" class="btn-primary">Responder</button>
+                                            </div>
+                                        </form>
+
+                                        <form asp-action="UpdateSupportConversationStatus" method="post" class="support-admin-status-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="conversationId" value="@conversation.ConversationId" />
+                                            <input type="hidden" name="supportDate" value="@supportDateFilter" />
+                                            <input type="hidden" name="status" value="resuelto" />
+                                            <button type="submit" class="btn-secondary">Marcar como resuelto</button>
+                                        </form>
+                                    </div>
                                 }
                             }
-                        </tbody>
-                    </table>
+                        </article>
+
+                        <article class="support-admin-column">
+                            <header class="support-admin-column-head">
+                                <h3>Resueltos</h3>
+                                <span>@supportResolvedConversations.Count</span>
+                            </header>
+
+                            @if (!supportResolvedConversations.Any())
+                            {
+                                <p class="support-admin-empty">No hay conversaciones resueltas.</p>
+                            }
+                            else
+                            {
+                                foreach (var conversation in supportResolvedConversations)
+                                {
+                                    <div class="support-admin-card">
+                                        <div class="support-admin-meta">
+                                            <strong>@conversation.Subject</strong>
+                                            <small>@conversation.ClientName · @conversation.ClientEmail</small>
+                                            <small>Actualizado: @conversation.UpdatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
+                                        </div>
+
+                                        <div class="support-admin-thread">
+                                            @foreach (var threadMessage in conversation.Messages.Where(x => !x.IsSystemEvent))
+                                            {
+                                                var isAdminMessage = string.Equals(threadMessage.SenderRole, "administrador", StringComparison.OrdinalIgnoreCase);
+                                                <div class="support-admin-thread-item @(isAdminMessage ? "admin" : "client")">
+                                                    <div>
+                                                        <strong>@threadMessage.SenderName</strong>
+                                                        <small>@threadMessage.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
+                                                    </div>
+                                                    <p>@threadMessage.Message</p>
+                                                </div>
+                                            }
+                                        </div>
+
+                                        <form asp-action="UpdateSupportConversationStatus" method="post" class="support-admin-status-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="conversationId" value="@conversation.ConversationId" />
+                                            <input type="hidden" name="supportDate" value="@supportDateFilter" />
+                                            <input type="hidden" name="status" value="pendiente" />
+                                            <button type="submit" class="btn-secondary">Mover a pendientes</button>
+                                        </form>
+                                    </div>
+                                }
+                            }
+                        </article>
+                    </div>
                 </section>
             </div>
         }
