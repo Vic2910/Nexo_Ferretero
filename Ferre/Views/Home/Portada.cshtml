@@ -70,9 +70,20 @@
         </div>
 
         <div class="user-actions">
-            <div class="icon-btn">
-                <i class="fas fa-bell"></i>
-                <span class="badge">3</span>
+            <div class="notifications-wrapper">
+                <button type="button" class="icon-btn" id="notificationToggle" aria-label="Ver notificaciones" aria-expanded="false">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge" id="notificationBadge" style="display:none;">0</span>
+                </button>
+                <div class="notifications-menu" id="notificationsMenu">
+                    <div class="notifications-menu-header">
+                        <strong>Notificaciones</strong>
+                        <button type="button" id="notificationsMarkRead">Marcar leídas</button>
+                    </div>
+                    <div class="notifications-menu-body" id="notificationsMenuBody">
+                        <p class="notifications-empty">No hay notificaciones.</p>
+                    </div>
+                </div>
             </div>
             @if (isAuthenticated)
             {
@@ -308,10 +319,33 @@
                         <button class="filter-chip" data-filter="@category.Name">@category.Name</button>
                     }
                 </div>
+                <div class="catalog-tools-section">
+                    <div class="catalog-tool-block">
+                        <label for="catalogSortSelect">Ordenar por</label>
+                        <select id="catalogSortSelect" class="catalog-tool-control">
+                            <option value="relevance">Relevancia</option>
+                            <option value="name_asc">Nombre (A-Z)</option>
+                            <option value="name_desc">Nombre (Z-A)</option>
+                            <option value="price_asc">Precio (menor a mayor)</option>
+                            <option value="price_desc">Precio (mayor a menor)</option>
+                        </select>
+                    </div>
+                    <div class="catalog-tool-block price-range-block">
+                        <label>Rango de precios</label>
+                        <div class="catalog-price-range">
+                            <input type="number" id="catalogMinPrice" class="catalog-tool-control" min="0" step="0.01" placeholder="Mínimo" inputmode="decimal" />
+                            <span>a</span>
+                            <input type="number" id="catalogMaxPrice" class="catalog-tool-control" min="0" step="0.01" placeholder="Máximo" inputmode="decimal" />
+                            <button type="button" class="catalog-tool-btn" id="catalogApplyPriceFilter">Aplicar</button>
+                            <button type="button" class="catalog-tool-btn light" id="catalogClearPriceFilter">Limpiar</button>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- GRID PRODUCTOS -->
             <div class="products-grid" id="productsGrid"></div>
+            <nav class="catalog-pagination" id="catalogPagination" aria-label="Paginación del catálogo" hidden></nav>
 
         </section>
 

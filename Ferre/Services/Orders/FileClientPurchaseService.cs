@@ -44,6 +44,7 @@ public sealed class FileClientPurchaseService : IClientPurchaseService
         var receipt = new ClientPurchaseReceipt
         {
             Id = Guid.NewGuid(),
+            UserEmail = normalizedEmail,
             ReceiptNumber = $"NEXO-{nowUtc:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}",
             CreatedAtUtc = nowUtc,
             PaymentMethod = normalizedPaymentMethod switch
@@ -133,7 +134,16 @@ public sealed class FileClientPurchaseService : IClientPurchaseService
         {
             var store = await ReadStoreUnsafeAsync(cancellationToken);
             var allItems = store.ItemsByOwner
-                .SelectMany(x => x.Value ?? new List<ClientPurchaseReceipt>())
+                .SelectMany(x => (x.Value ?? new List<ClientPurchaseReceipt>())
+                    .Select(receipt =>
+                    {
+                        if (string.IsNullOrWhiteSpace(receipt.UserEmail))
+                        {
+                            receipt.UserEmail = NormalizeEmail(x.Key);
+                        }
+
+                        return receipt;
+                    }))
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .ToList();
 

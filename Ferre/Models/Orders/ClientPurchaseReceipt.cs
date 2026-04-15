@@ -4,6 +4,8 @@ public sealed class ClientPurchaseReceipt
 {
     public Guid Id { get; set; }
 
+    public string UserEmail { get; set; } = string.Empty;
+
     public string ReceiptNumber { get; set; } = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; }

@@ -55,6 +55,7 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
         var receipt = new ClientPurchaseReceipt
         {
             Id = Guid.NewGuid(),
+            UserEmail = normalizedEmail,
             ReceiptNumber = $"NEXO-{nowUtc:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}",
             CreatedAtUtc = nowUtc,
             PaymentMethod = paymentLabel,
@@ -308,6 +309,7 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
             return new ClientPurchaseReceipt
             {
                 Id = purchase.Id,
+                UserEmail = purchase.UserEmail,
                 ReceiptNumber = purchase.ReceiptNumber,
                 CreatedAtUtc = purchase.CreatedAtUtc,
                 PaymentMethod = purchase.PaymentMethod,

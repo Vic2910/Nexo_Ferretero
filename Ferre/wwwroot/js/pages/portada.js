@@ -36,11 +36,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let hasLoadedCatalog = products.length > 0;
     let currentFilter = 'Todo';
     let currentSearchTerm = '';
+    let currentSortOption = 'relevance';
+    let currentMinPrice = '';
+    let currentMaxPrice = '';
+    const productsPerPage = 12;
+    let currentPage = 1;
 
     const grid = document.getElementById('productsGrid');
+    const catalogPagination = document.getElementById('catalogPagination');
     const modal = document.getElementById('modal');
     const modalContent = document.getElementById('modalContent');
     const closeModal = document.getElementById('closeModal');
+    const notificationToggle = document.getElementById('notificationToggle');
+    const notificationBadge = document.getElementById('notificationBadge');
+    const notificationsMenu = document.getElementById('notificationsMenu');
+    const notificationsMenuBody = document.getElementById('notificationsMenuBody');
+    const notificationsMarkRead = document.getElementById('notificationsMarkRead');
     const userProfileToggle = document.getElementById('userProfileToggle');
     const userProfileMenu = document.getElementById('userProfileMenu');
     const goToMyProfile = document.getElementById('goToMyProfile');
@@ -97,6 +108,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const paymentCashCustomerName = document.getElementById('paymentCashCustomerName');
     const catalogSearchInput = document.getElementById('catalogSearchInput');
     const catalogSearchButton = document.getElementById('catalogSearchButton');
+    const catalogSortSelect = document.getElementById('catalogSortSelect');
+    const catalogMinPriceInput = document.getElementById('catalogMinPrice');
+    const catalogMaxPriceInput = document.getElementById('catalogMaxPrice');
+    const catalogApplyPriceFilterButton = document.getElementById('catalogApplyPriceFilter');
+    const catalogClearPriceFilterButton = document.getElementById('catalogClearPriceFilter');
     const isAuthenticated = window.portadaData?.isAuthenticated === true
         || !!document.getElementById('userProfileToggle')
         || !!(`${window.portadaData?.userEmail || ''}`.trim());
@@ -112,7 +128,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const cartStorageKey = isAuthenticated && userEmail
         ? `nexo_cart_${userEmail}`
         : guestCartStorageKey;
+    const notificationsStorageKey = isAuthenticated && userEmail
+        ? `nexo_notifications_${userEmail}`
+        : 'nexo_notifications_guest';
+    const supportResponsesStorageKey = isAuthenticated && userEmail
+        ? `nexo_support_responses_${userEmail}`
+        : 'nexo_support_responses_guest';
     let cartItems = [];
+    let notifications = [];
+    let supportResponseTracker = {};
     let cartToastTimer;
     let productSearchDebounceTimer;
     let selectedPaymentMethod = 'tarjeta';
@@ -275,6 +299,289 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 2200);
     }
 
+    function loadNotifications() {
+        try {
+            const raw = window.localStorage.getItem(notificationsStorageKey);
+            const parsed = raw ? JSON.parse(raw) : [];
+            notifications = Array.isArray(parsed) ? parsed : [];
+        } catch {
+            notifications = [];
+        }
+    }
+
+    function persistNotifications() {
+        try {
+            if (!notifications.length) {
+                window.localStorage.removeItem(notificationsStorageKey);
+                return;
+            }
+
+            window.localStorage.setItem(notificationsStorageKey, JSON.stringify(notifications.slice(0, 60)));
+        } catch {
+            // Sin bloqueo si localStorage falla.
+        }
+    }
+
+    function loadSupportResponseTracker() {
+        try {
+            const raw = window.localStorage.getItem(supportResponsesStorageKey);
+            const parsed = raw ? JSON.parse(raw) : {};
+            supportResponseTracker = parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+            supportResponseTracker = {};
+        }
+    }
+
+    function persistSupportResponseTracker() {
+        try {
+            window.localStorage.setItem(supportResponsesStorageKey, JSON.stringify(supportResponseTracker));
+        } catch {
+            // Sin bloqueo si localStorage falla.
+        }
+    }
+
+    function renderNotifications() {
+        if (!notificationsMenuBody || !notificationBadge) {
+            return;
+        }
+
+        const unreadCount = notifications.filter(item => item && item.read !== true).length;
+        notificationBadge.textContent = `${unreadCount}`;
+        notificationBadge.style.display = unreadCount > 0 ? 'flex' : 'none';
+
+        if (!notifications.length) {
+            notificationsMenuBody.innerHTML = '<p class="notifications-empty">No hay notificaciones.</p>';
+            return;
+        }
+
+        notificationsMenuBody.innerHTML = notifications
+            .slice(0, 30)
+            .map(item => `
+                <article class="notification-item ${item.read === true ? '' : 'unread'}">
+                    <p>${escapeHtml(item.message || '')}</p>
+                    <small>${formatDateTime(item.createdAtUtc)}</small>
+                </article>
+            `)
+            .join('');
+    }
+
+    function addNotification(message) {
+        const normalized = `${message || ''}`.trim();
+        if (!normalized) {
+            return;
+        }
+
+        notifications.unshift({
+            id: `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+            message: normalized,
+            createdAtUtc: new Date().toISOString(),
+            read: false
+        });
+
+        notifications = notifications.slice(0, 60);
+        persistNotifications();
+        renderNotifications();
+    }
+
+    function markAllNotificationsAsRead() {
+        if (!notifications.length) {
+            return;
+        }
+
+        notifications = notifications.map(item => ({ ...item, read: true }));
+        persistNotifications();
+        renderNotifications();
+    }
+
+    function openNotificationsMenu() {
+        notificationsMenu?.classList.add('open');
+        notificationToggle?.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeNotificationsMenu() {
+        notificationsMenu?.classList.remove('open');
+        notificationToggle?.setAttribute('aria-expanded', 'false');
+    }
+
+    function processSupportResponseNotifications(conversations) {
+        if (!Array.isArray(conversations) || !conversations.length) {
+            return;
+        }
+
+        let trackerUpdated = false;
+        conversations.forEach(conversation => {
+            const conversationId = `${conversation?.conversationId || ''}`.trim();
+            if (!conversationId) {
+                return;
+            }
+
+            const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+            const adminMessages = messages
+                .filter(message => !message?.isSystemEvent && `${message?.senderRole || ''}`.toLowerCase() === 'administrador')
+                .sort((left, right) => new Date(left.createdAtUtc) - new Date(right.createdAtUtc));
+
+            const latestAdminMessage = adminMessages.at(-1);
+            if (!latestAdminMessage?.createdAtUtc) {
+                return;
+            }
+
+            const latestTimestamp = `${latestAdminMessage.createdAtUtc}`;
+            const trackedTimestamp = `${supportResponseTracker[conversationId] || ''}`;
+
+            if (!trackedTimestamp) {
+                supportResponseTracker[conversationId] = latestTimestamp;
+                trackerUpdated = true;
+                return;
+            }
+
+            if (new Date(latestTimestamp) > new Date(trackedTimestamp)) {
+                addNotification(`Se recibió una respuesta del reporte "${conversation.subject || 'Sin asunto'}".`);
+                supportResponseTracker[conversationId] = latestTimestamp;
+                trackerUpdated = true;
+            }
+        });
+
+        if (trackerUpdated) {
+            persistSupportResponseTracker();
+        }
+    }
+
+    function renderCatalogPagination(totalItems) {
+        if (!catalogPagination) {
+            return;
+        }
+
+        const totalPages = Math.max(1, Math.ceil(totalItems / productsPerPage));
+        if (totalPages <= 1) {
+            catalogPagination.innerHTML = '';
+            catalogPagination.hidden = true;
+            return;
+        }
+
+        catalogPagination.hidden = false;
+        catalogPagination.innerHTML = '';
+
+        const prevButton = document.createElement('button');
+        prevButton.type = 'button';
+        prevButton.className = 'catalog-page-btn nav';
+        prevButton.textContent = 'Anterior';
+        prevButton.disabled = currentPage <= 1;
+        prevButton.addEventListener('click', () => {
+            if (currentPage <= 1) {
+                return;
+            }
+
+            currentPage -= 1;
+            renderProducts(currentFilter, currentSearchTerm);
+        });
+        catalogPagination.appendChild(prevButton);
+
+        for (let page = 1; page <= totalPages; page += 1) {
+            const pageButton = document.createElement('button');
+            pageButton.type = 'button';
+            pageButton.className = `catalog-page-btn ${page === currentPage ? 'active' : ''}`;
+            pageButton.textContent = `${page}`;
+            pageButton.addEventListener('click', () => {
+                if (currentPage === page) {
+                    return;
+                }
+
+                currentPage = page;
+                renderProducts(currentFilter, currentSearchTerm);
+            });
+            catalogPagination.appendChild(pageButton);
+        }
+
+        const nextButton = document.createElement('button');
+        nextButton.type = 'button';
+        nextButton.className = 'catalog-page-btn nav';
+        nextButton.textContent = 'Siguiente';
+        nextButton.disabled = currentPage >= totalPages;
+        nextButton.addEventListener('click', () => {
+            if (currentPage >= totalPages) {
+                return;
+            }
+
+            currentPage += 1;
+            renderProducts(currentFilter, currentSearchTerm);
+        });
+        catalogPagination.appendChild(nextButton);
+    }
+
+    function clampCatalogQuantityInput(input) {
+        if (!input) {
+            return;
+        }
+
+        const productId = input.dataset.qtyInput;
+        const product = findProduct(productId);
+        const maxStock = Math.max(1, Number(product?.stock || 1));
+        const minValue = 1;
+        const rawValue = Number(input.value || minValue);
+        const boundedValue = Number.isFinite(rawValue)
+            ? Math.min(maxStock, Math.max(minValue, Math.floor(rawValue)))
+            : minValue;
+
+        if (boundedValue !== rawValue) {
+            input.value = `${boundedValue}`;
+        }
+    }
+
+    function parsePriceFilterValue(value) {
+        const normalized = `${value ?? ''}`.trim();
+        if (!normalized.length) {
+            return null;
+        }
+
+        const parsed = Number(normalized);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+            return null;
+        }
+
+        return parsed;
+    }
+
+    function getFilteredProducts(filter = 'Todo', searchTerm = '') {
+        const normalizedSearch = normalizeText(searchTerm);
+        const minPrice = parsePriceFilterValue(currentMinPrice);
+        const maxPrice = parsePriceFilterValue(currentMaxPrice);
+
+        let filtered = filter === 'Todo'
+            ? [...products]
+            : products.filter(product => product.category === filter);
+
+        if (normalizedSearch) {
+            filtered = filtered.filter(product => product.searchIndex.includes(normalizedSearch));
+        }
+
+        if (minPrice !== null) {
+            filtered = filtered.filter(product => Number(product.price || 0) >= minPrice);
+        }
+
+        if (maxPrice !== null) {
+            filtered = filtered.filter(product => Number(product.price || 0) <= maxPrice);
+        }
+
+        switch (currentSortOption) {
+            case 'name_asc':
+                filtered.sort((left, right) => `${left.name || ''}`.localeCompare(`${right.name || ''}`, 'es', { sensitivity: 'base' }));
+                break;
+            case 'name_desc':
+                filtered.sort((left, right) => `${right.name || ''}`.localeCompare(`${left.name || ''}`, 'es', { sensitivity: 'base' }));
+                break;
+            case 'price_asc':
+                filtered.sort((left, right) => Number(left.price || 0) - Number(right.price || 0));
+                break;
+            case 'price_desc':
+                filtered.sort((left, right) => Number(right.price || 0) - Number(left.price || 0));
+                break;
+            default:
+                break;
+        }
+
+        return filtered;
+    }
+
     function renderProducts(filter = 'Todo', searchTerm = '') {
         currentFilter = filter;
         currentSearchTerm = normalizeText(searchTerm);
@@ -285,25 +592,29 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const filteredByCategory = filter === 'Todo'
-            ? products
-            : products.filter(p => p.category === filter);
-
-        const filtered = currentSearchTerm
-            ? products.filter(p => p.searchIndex.includes(currentSearchTerm))
-            : filteredByCategory;
+        const filtered = getFilteredProducts(filter, searchTerm);
 
         if (!filtered.length) {
+            if (catalogPagination) {
+                catalogPagination.innerHTML = '';
+                catalogPagination.hidden = true;
+            }
             grid.innerHTML = currentSearchTerm
                 ? '<div class="error-message">No se encontraron productos relacionados con tu búsqueda.</div>'
-                : '<div class="error-message">No hay productos disponibles para esta categoría.</div>';
+                : '<div class="error-message">No hay productos disponibles con los filtros seleccionados.</div>';
             return;
         }
 
-        filtered.forEach(p => {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / productsPerPage));
+        currentPage = Math.min(Math.max(currentPage, 1), totalPages);
+        const startIndex = (currentPage - 1) * productsPerPage;
+        const paginatedProducts = filtered.slice(startIndex, startIndex + productsPerPage);
+
+        paginatedProducts.forEach(p => {
             const card = document.createElement('div');
             card.className = 'product-card';
             card.dataset.id = p.id;
+            const quantityInputId = `productQty_${p.id}`;
             card.innerHTML = `
                 <div class="product-image">
                     <img src="${p.image}" alt="${p.name}">
@@ -318,14 +629,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="rating"><i class="fas fa-star"></i> ${p.rating.toFixed(1)}</div>
                 </div>
                 <div class="product-footer">
-                    <button class="btn-add" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}><i class="fas fa-cart-plus"></i> ${p.stock <= 0 ? 'Sin stock' : 'Carrito'}</button>
+                    <div class="product-qty-box">
+                        <label for="${quantityInputId}">Cant.</label>
+                        <input id="${quantityInputId}" type="number" min="1" max="${Math.max(p.stock, 1)}" step="1" value="1" data-qty-input="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>
+                    </div>
+                    <button class="btn-add" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}><i class="fas fa-cart-plus"></i> ${p.stock <= 0 ? 'Sin stock' : 'Agregar'}</button>
                 </div>
             `;
             card.querySelector('img')?.addEventListener('error', event => {
                 event.target.src = fallbackProductImage;
             });
             card.addEventListener('click', event => {
-                if (event.target.closest('[data-add]')) {
+                if (event.target.closest('[data-add], [data-qty-input], .product-qty-box label')) {
                     return;
                 }
 
@@ -333,12 +648,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             grid.appendChild(card);
         });
+
+        renderCatalogPagination(filtered.length);
     }
 
     function openModal(p) {
         const images = [p.image, p.image2, p.image3].filter(image => typeof image === 'string' && image.trim().length > 0);
         const productImages = images.length ? images : [fallbackProductImage];
         const isLowStock = p.stock <= p.minStock;
+        const modalQtyId = `modalQty_${p.id}`;
 
         modalContent.innerHTML = `
             <div class="modal-image">
@@ -366,6 +684,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="modal-meta">
                     <span class="meta-item ${isLowStock ? 'low-stock' : ''}"><i class="fas fa-box"></i> Stock: ${p.stock}</span>
                     <span class="meta-item"><i class="fas fa-star" style="color: #FFB74D;"></i> ${p.rating}</span>
+                </div>
+                <div class="modal-qty-box">
+                    <label for="${modalQtyId}">Cantidad</label>
+                    <input id="${modalQtyId}" type="number" min="1" max="${Math.max(p.stock, 1)}" step="1" value="1" data-qty-input="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>
                 </div>
                 <button class="btn-modal-add" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>${p.stock <= 0 ? 'Sin stock' : 'Agregar al carrito'}</button>
             </div>
@@ -699,7 +1021,22 @@ document.addEventListener('DOMContentLoaded', () => {
         paypalOrderId = '';
     }
 
-    function addToCart(id) {
+    function resolveDesiredQuantity(productId, triggerElement) {
+        const triggerNode = triggerElement instanceof Element ? triggerElement : null;
+        const nearestContainer = triggerNode?.closest('.product-footer, .modal-details');
+        const scopedInput = nearestContainer?.querySelector(`[data-qty-input="${productId}"]`);
+        const globalInput = document.querySelector(`[data-qty-input="${productId}"]`);
+        const qtyInput = scopedInput || globalInput;
+        clampCatalogQuantityInput(qtyInput);
+        const rawValue = Number(qtyInput?.value || 1);
+        if (!Number.isFinite(rawValue)) {
+            return 1;
+        }
+
+        return Math.max(1, Math.floor(rawValue));
+    }
+
+    function addToCart(id, desiredQuantity = 1) {
         const product = findProduct(id);
         if (!product || product.stock <= 0) {
             showCartToast('Producto sin stock disponible.', true);
@@ -708,20 +1045,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const normalizedId = `${id}`;
         const existing = cartItems.find(item => `${item.productId}` === normalizedId);
+        const safeDesiredQuantity = Math.max(1, Math.floor(Number(desiredQuantity || 1)));
         if (existing) {
             if (existing.quantity >= product.stock) {
                 showCartToast(`Solo quedan ${product.stock} unidades de ${product.name}.`, true);
                 return;
             }
 
-            existing.quantity += 1;
+            const allowedIncrease = product.stock - existing.quantity;
+            const quantityToAdd = Math.min(safeDesiredQuantity, allowedIncrease);
+            existing.quantity += quantityToAdd;
+
+            if (quantityToAdd < safeDesiredQuantity) {
+                showCartToast(`Solo se agregaron ${quantityToAdd} unidad(es) por límite de stock.`, true);
+            }
         } else {
-            cartItems.push({ productId: normalizedId, quantity: 1 });
+            const initialQuantity = Math.min(safeDesiredQuantity, product.stock);
+            cartItems.push({ productId: normalizedId, quantity: initialQuantity });
+
+            if (initialQuantity < safeDesiredQuantity) {
+                showCartToast(`Solo se agregaron ${initialQuantity} unidad(es) por límite de stock.`, true);
+            }
         }
 
         renderCartPanel();
         updateCartBadge();
         showCartToast(`${product.name} agregado al carrito.`);
+        addNotification(`Se agregó el producto "${product.name}" al carrito.`);
     }
 
     function buildCheckoutPayload() {
@@ -851,6 +1201,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateCartBadge();
             await refreshCatalogProducts();
             showCartToast(checkoutPayload.successMessage || 'Compra confirmada con PayPal.');
+            addNotification(`Se realizó una compra correctamente${checkoutPayload?.receipt?.receiptNumber ? ` (${checkoutPayload.receipt.receiptNumber})` : ''}.`);
             closePaymentModal();
             closeCartPanel();
         } catch {
@@ -919,6 +1270,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateCartBadge();
             await refreshCatalogProducts();
             showCartToast(payload.successMessage || 'Compra confirmada correctamente.');
+            addNotification(`Se realizó una compra correctamente${payload?.receipt?.receiptNumber ? ` (${payload.receipt.receiptNumber})` : ''}.`);
             closePaymentModal();
             closeCartPanel();
         } catch {
@@ -950,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.key === 'Escape') {
             closeOrderHistoryPanel();
             closeSupportPanel();
+            closeNotificationsMenu();
         }
     });
 
@@ -961,7 +1314,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         e.stopPropagation();
         const id = addButton.dataset.add;
-        addToCart(id);
+        const desiredQuantity = resolveDesiredQuantity(id, addButton);
+        addToCart(id, desiredQuantity);
+    });
+
+    document.addEventListener('input', event => {
+        const qtyInput = event.target.closest('[data-qty-input]');
+        if (!qtyInput) {
+            return;
+        }
+
+        clampCatalogQuantityInput(qtyInput);
+    });
+
+    document.addEventListener('change', event => {
+        const qtyInput = event.target.closest('[data-qty-input]');
+        if (!qtyInput) {
+            return;
+        }
+
+        clampCatalogQuantityInput(qtyInput);
     });
 
     cartPanelBody?.addEventListener('change', event => {
@@ -1027,8 +1399,45 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     setPaymentMethod(selectedPaymentMethod);
 
+    notificationToggle?.addEventListener('click', event => {
+        event.stopPropagation();
+        const willOpen = !notificationsMenu?.classList.contains('open');
+        if (willOpen) {
+            openNotificationsMenu();
+        } else {
+            closeNotificationsMenu();
+        }
+    });
+
+    notificationsMarkRead?.addEventListener('click', () => {
+        markAllNotificationsAsRead();
+    });
+
     function submitProductSearch() {
+        currentPage = 1;
         renderProducts(currentFilter, catalogSearchInput?.value || '');
+    }
+
+    function applyCatalogPriceFilters() {
+        const minValue = parsePriceFilterValue(catalogMinPriceInput?.value);
+        const maxValue = parsePriceFilterValue(catalogMaxPriceInput?.value);
+
+        if (minValue !== null && maxValue !== null && minValue > maxValue) {
+            currentMinPrice = `${maxValue}`;
+            currentMaxPrice = `${minValue}`;
+            if (catalogMinPriceInput) {
+                catalogMinPriceInput.value = `${maxValue}`;
+            }
+            if (catalogMaxPriceInput) {
+                catalogMaxPriceInput.value = `${minValue}`;
+            }
+        } else {
+            currentMinPrice = minValue === null ? '' : `${minValue}`;
+            currentMaxPrice = maxValue === null ? '' : `${maxValue}`;
+        }
+
+        currentPage = 1;
+        renderProducts(currentFilter, catalogSearchInput?.value || currentSearchTerm);
     }
 
     catalogSearchInput?.addEventListener('input', () => {
@@ -1048,10 +1457,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
     catalogSearchButton?.addEventListener('click', submitProductSearch);
 
+    catalogSortSelect?.addEventListener('change', event => {
+        currentSortOption = `${event.target?.value || 'relevance'}`;
+        currentPage = 1;
+        renderProducts(currentFilter, catalogSearchInput?.value || currentSearchTerm);
+    });
+
+    catalogApplyPriceFilterButton?.addEventListener('click', applyCatalogPriceFilters);
+
+    catalogClearPriceFilterButton?.addEventListener('click', () => {
+        currentMinPrice = '';
+        currentMaxPrice = '';
+        if (catalogMinPriceInput) {
+            catalogMinPriceInput.value = '';
+        }
+        if (catalogMaxPriceInput) {
+            catalogMaxPriceInput.value = '';
+        }
+        currentPage = 1;
+        renderProducts(currentFilter, catalogSearchInput?.value || currentSearchTerm);
+    });
+
+    [catalogMinPriceInput, catalogMaxPriceInput].forEach(input => {
+        input?.addEventListener('keydown', event => {
+            if (event.key !== 'Enter') {
+                return;
+            }
+
+            event.preventDefault();
+            applyCatalogPriceFilters();
+        });
+    });
+
     document.querySelectorAll('.filter-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            currentPage = 1;
             renderProducts(btn.dataset.filter || btn.textContent || 'Todo', catalogSearchInput?.value || '');
         });
     });
@@ -1221,18 +1663,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.addEventListener('click', event => {
-        if (!userProfileMenu || !userProfileToggle) {
-            return;
-        }
-
         const target = event.target;
         if (!(target instanceof Node)) {
             return;
         }
 
-        if (!userProfileMenu.contains(target) && !userProfileToggle.contains(target)) {
+        if (userProfileMenu && userProfileToggle
+            && !userProfileMenu.contains(target)
+            && !userProfileToggle.contains(target)) {
             userProfileMenu.classList.remove('open');
             userProfileToggle.setAttribute('aria-expanded', 'false');
+        }
+
+        if (notificationsMenu && notificationToggle
+            && !notificationsMenu.contains(target)
+            && !notificationToggle.contains(target)) {
+            closeNotificationsMenu();
         }
     });
 
@@ -1341,7 +1787,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            renderClientSupportInbox(payload.conversations || []);
+            const conversations = payload.conversations || [];
+            processSupportResponseNotifications(conversations);
+            renderClientSupportInbox(conversations);
         } catch {
             // No bloquear la UI por fallas transitorias.
         }
@@ -1422,6 +1870,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const formData = new FormData(contactSupportForm);
+            const reportSubject = `${formData.get('Subject') || ''}`.trim();
             const response = await fetch(contactSupportForm.action, {
                 method: 'POST',
                 headers: {
@@ -1437,6 +1886,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             setContactSupportMessage(payload.successMessage || 'Tu consulta fue enviada correctamente.');
+            addNotification(`Se envió correctamente el reporte${reportSubject ? ` "${reportSubject}"` : ''}.`);
             contactSupportForm.reset();
             const emailField = contactSupportForm.querySelector('input[name="Email"]');
             const nameField = contactSupportForm.querySelector('input[name="Name"]');
@@ -1458,6 +1908,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const currentSection = new URLSearchParams(window.location.search).get('section');
     showSection(currentSection === 'profile' ? 'profile' : 'store');
+    loadNotifications();
+    loadSupportResponseTracker();
+    renderNotifications();
     loadCart();
     renderProducts();
     renderCartPanel();
@@ -1469,4 +1922,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPurchaseHistory();
     loadClientSupportInbox();
     window.setInterval(refreshCatalogProducts, 15000);
+    if (isAuthenticated) {
+        window.setInterval(loadClientSupportInbox, 25000);
+    }
 });

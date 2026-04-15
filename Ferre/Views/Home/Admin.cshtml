@@ -1490,7 +1490,7 @@
                                     var isCanceled = string.Equals(order.Status, "cancelado", StringComparison.OrdinalIgnoreCase);
                                     <tr>
                                         <td>@order.ReceiptNumber</td>
-                                        <td>@(order.Lines.Count) ítem(s)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(order.UserEmail) ? "Cliente no disponible" : order.UserEmail)</td>
                                         <td>@order.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                                         <td>@order.PaymentMethod</td>
                                         <td>@order.Total.ToString("C")</td>
