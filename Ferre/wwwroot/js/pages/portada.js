@@ -953,7 +953,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.status === 401 || payload?.requiresLogin) {
                         showCartToast(payload?.errorMessage || 'Debes iniciar sesión para ir a pagar.', true);
                         window.setTimeout(() => {
-                            window.location.href = payload?.loginUrl || loginUrl;
+                            window.location.href = loginUrl || payload?.loginUrl || '/Home/Login';
                         }, 500);
                         throw new Error('Usuario sin sesión activa');
                     }
@@ -1181,7 +1181,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.status === 401 || checkoutPayload?.requiresLogin) {
                 showCartToast(checkoutPayload?.errorMessage || 'Debes iniciar sesión para ir a pagar.', true);
                 window.setTimeout(() => {
-                    window.location.href = checkoutPayload?.loginUrl || loginUrl;
+                    window.location.href = loginUrl || checkoutPayload?.loginUrl || '/Home/Login';
                 }, 500);
                 return;
             }
@@ -1251,7 +1251,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.status === 401 || payload?.requiresLogin) {
                 showCartToast(payload?.errorMessage || 'Debes iniciar sesión para ir a pagar.', true);
                 window.setTimeout(() => {
-                    window.location.href = payload?.loginUrl || loginUrl;
+                    window.location.href = loginUrl || payload?.loginUrl || '/Home/Login';
                 }, 500);
                 return;
             }

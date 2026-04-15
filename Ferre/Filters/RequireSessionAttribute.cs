@@ -22,7 +22,7 @@ public sealed class RequireSessionAttribute : Attribute, IAsyncActionFilter
         {
             if (IsAjaxRequest(httpContext.Request))
             {
-                var returnUrl = $"{httpContext.Request.Path}{httpContext.Request.QueryString}";
+                var returnUrl = ResolveReturnUrl(httpContext.Request);
                 var loginUrl = $"/Home/Login?returnUrl={Uri.EscapeDataString(returnUrl)}";
 
                 context.Result = new UnauthorizedObjectResult(new
@@ -66,5 +66,25 @@ public sealed class RequireSessionAttribute : Attribute, IAsyncActionFilter
     private static bool IsAjaxRequest(HttpRequest request)
     {
         return string.Equals(request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveReturnUrl(HttpRequest request)
+    {
+        if (HttpMethods.IsGet(request.Method))
+        {
+            return $"{request.Path}{request.QueryString}";
+        }
+
+        var referer = request.Headers.Referer.ToString();
+        if (Uri.TryCreate(referer, UriKind.Absolute, out var refererUri))
+        {
+            var refererPath = $"{refererUri.AbsolutePath}{refererUri.Query}";
+            if (!string.IsNullOrWhiteSpace(refererPath) && refererPath != "/")
+            {
+                return refererPath;
+            }
+        }
+
+        return "/Home/Portada";
     }
 }
