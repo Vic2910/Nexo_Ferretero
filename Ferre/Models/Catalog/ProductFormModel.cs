@@ -10,7 +10,13 @@ public sealed class ProductFormModel : IValidatableObject
     [StringLength(120, ErrorMessage = "El nombre no debe superar 120 caracteres.")]
     public string Name { get; set; } = string.Empty;
 
-    [Range(typeof(decimal), "0.01", "999999999", ErrorMessage = "El precio debe ser mayor a 0.")]
+    [Range(
+        typeof(decimal),
+        "0.01",
+        "999999999",
+        ErrorMessage = "El precio debe ser mayor a 0.",
+        ParseLimitsInInvariantCulture = true,
+        ConvertValueInInvariantCulture = true)]
     public decimal Price { get; set; }
 
     [StringLength(500, ErrorMessage = "La descripción no debe superar 500 caracteres.")]
