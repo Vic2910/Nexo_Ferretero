@@ -212,15 +212,32 @@
 
             <form asp-action="Vendedor" method="get" class="orders-filter-bar">
                 <input type="hidden" name="section" value="orders" />
-                <label for="ordersStatusFilter">Filtrar estado</label>
-                <select id="ordersStatusFilter" name="status" class="inventory-select">
-                    <option value="" selected="@(string.IsNullOrWhiteSpace(Model.StatusFilter) ? "selected" : null)">Todos</option>
-                    <option value="pendiente" selected="@(string.Equals(Model.StatusFilter, "pendiente", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Pendiente</option>
-                    <option value="pagado" selected="@(string.Equals(Model.StatusFilter, "pagado", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Pagado</option>
-                    <option value="entregado" selected="@(string.Equals(Model.StatusFilter, "entregado", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Entregado</option>
-                </select>
-                <button type="submit" class="btn-secondary">Aplicar</button>
-                <a class="btn-secondary" href="@Url.Action("Vendedor", new { section = "orders" })">Quitar filtro</a>
+                <div class="orders-filter-group">
+                    <label for="ordersStatusFilter">Estado</label>
+                    <select id="ordersStatusFilter" name="status" class="inventory-select">
+                        <option value="" selected="@(string.IsNullOrWhiteSpace(Model.StatusFilter) ? "selected" : null)">Todos</option>
+                        <option value="pendiente" selected="@(string.Equals(Model.StatusFilter, "pendiente", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Pendiente</option>
+                        <option value="pagado" selected="@(string.Equals(Model.StatusFilter, "pagado", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Pagado</option>
+                        <option value="cancelado" selected="@(string.Equals(Model.StatusFilter, "cancelado", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Cancelado</option>
+                        <option value="entregado" selected="@(string.Equals(Model.StatusFilter, "entregado", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Entregado</option>
+                    </select>
+                </div>
+                <div class="orders-filter-group">
+                    <label for="ordersReceiptFilter">Últimos 4 del ticket</label>
+                    <input id="ordersReceiptFilter"
+                           name="receipt"
+                           class="orders-search-input"
+                           type="text"
+                           inputmode="numeric"
+                           pattern="[0-9]*"
+                           maxlength="4"
+                           placeholder="Ej: 4759"
+                           value="@Model.ReceiptSearchFilter" />
+                </div>
+                <div class="orders-filter-actions">
+                    <button type="submit" class="btn-secondary">Buscar</button>
+                    <a class="btn-secondary" href="@Url.Action("Vendedor", new { section = "orders" })">Limpiar</a>
+                </div>
             </form>
 
             <section class="table-section">
@@ -232,7 +249,7 @@
                             <th>Cliente</th>
                             <th>Fecha</th>
                             <th>Estado</th>
-                            <th>Estado de pago</th>
+                            <th>Tipo de pago</th>
                             <th>Método</th>
                             <th>Total</th>
                             <th>Comprobante</th>
@@ -251,36 +268,42 @@
                             foreach (var order in activeOrders)
                             {
                                 var normalizedStatus = (order.Status ?? string.Empty).Trim().ToLowerInvariant();
-                                var isPending = string.Equals(normalizedStatus, "pendiente", StringComparison.Ordinal);
-                                var isPaid = string.Equals(normalizedStatus, "pagado", StringComparison.Ordinal);
-                                var isCanceled = string.Equals(normalizedStatus, "cancelado", StringComparison.Ordinal);
+                                var isPending = string.Equals(normalizedStatus, "pendiente", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "pending", StringComparison.Ordinal);
+                                var isPaid = string.Equals(normalizedStatus, "pagado", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "paid", StringComparison.Ordinal);
+                                var isCanceled = string.Equals(normalizedStatus, "cancelado", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "cancelada", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "cancelados", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "canceladas", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "anulado", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "anulada", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "canceled", StringComparison.Ordinal)
+                                    || string.Equals(normalizedStatus, "cancelled", StringComparison.Ordinal);
                                 var isCashPayment = string.Equals(order.PaymentMethod, "Efectivo", StringComparison.OrdinalIgnoreCase);
-                                var paymentStatusText = isPending
-                                    ? "Pendiente de pago"
-                                    : (isCashPayment ? "Pagado en efectivo" : "Pagado en línea");
+                                var isCardPayment = string.Equals(order.PaymentMethod, "Tarjeta", StringComparison.OrdinalIgnoreCase);
+                                var isPayPalPayment = string.Equals(order.PaymentMethod, "PayPal", StringComparison.OrdinalIgnoreCase);
+                                var showCanceledStatus = isCanceled || isPayPalPayment;
+                                var statusText = showCanceledStatus
+                                    ? "Cancelado"
+                                    : (isPending ? "Pendiente" : (isPaid ? "Pagado" : "Cancelado"));
+                                var statusClass = showCanceledStatus ? "order-status-canceled" : string.Empty;
+                                var paymentStatusText = isCashPayment ? "Local" : "Pago en línea";
+                                var paymentMethodClass = isCardPayment
+                                    ? "payment-method-badge card"
+                                    : (isCashPayment
+                                        ? "payment-method-badge cash"
+                                        : (isPayPalPayment ? "payment-method-badge paypal" : "payment-method-badge"));
                                 <tr>
                                     <td>@order.ReceiptNumber</td>
                                     <td>@order.UserEmail</td>
                                     <td>@order.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                                    <td>
-                                        @if (isPending)
-                                        {
-                                            <span class="stock-alert-badge low">Pendiente</span>
-                                        }
-                                        else if (isCanceled)
-                                        {
-                                            <span class="stock-alert-badge out">Cancelado</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="stock-alert-badge" style="background:#dbeafe;color:#1d4ed8;">Pagado</span>
-                                        }
-                                    </td>
+                                    <td><span class="@statusClass">@statusText</span></td>
                                     <td>@paymentStatusText</td>
-                                    <td>@order.PaymentMethod</td>
+                                    <td><span class="@paymentMethodClass">@order.PaymentMethod</span></td>
                                     <td>@order.Total.ToString("C")</td>
                                     <td>
-                                        <a class="btn-secondary" asp-action="DownloadOrderReceiptPdf" asp-route-receiptId="@order.Id" target="_blank" rel="noopener">Ver</a>
+                                        <button type="button" class="btn-secondary js-open-receipt-preview" data-receipt-url="@Url.Action("PreviewOrderReceiptPdf", new { receiptId = order.Id })">Ver</button>
                                     </td>
                                     <td class="order-actions-cell">
                                         @if (isPending && isCashPayment)
@@ -289,6 +312,7 @@
                                                 @Html.AntiForgeryToken()
                                                 <input type="hidden" name="receiptId" value="@order.Id" />
                                                 <input type="hidden" name="status" value="@Model.StatusFilter" />
+                                                <input type="hidden" name="receipt" value="@Model.ReceiptSearchFilter" />
                                                 <button type="submit" class="btn-secondary">Cobrar efectivo</button>
                                             </form>
                                         }
@@ -296,6 +320,7 @@
                                             @Html.AntiForgeryToken()
                                             <input type="hidden" name="receiptId" value="@order.Id" />
                                             <input type="hidden" name="status" value="@Model.StatusFilter" />
+                                            <input type="hidden" name="receipt" value="@Model.ReceiptSearchFilter" />
                                             @if (isPaid)
                                             {
                                                 <button type="submit" class="btn-secondary">Marcar entregado</button>
@@ -322,7 +347,7 @@
                             <th>Cliente</th>
                             <th>Fecha pedido</th>
                             <th>Fecha entrega</th>
-                            <th>Estado de pago</th>
+                            <th>Tipo de pago</th>
                             <th>Método</th>
                             <th>Total</th>
                             <th>Comprobante</th>
@@ -340,16 +365,23 @@
                             foreach (var order in deliveredOrders)
                             {
                                 var isCashPayment = string.Equals(order.PaymentMethod, "Efectivo", StringComparison.OrdinalIgnoreCase);
+                                var isCardPayment = string.Equals(order.PaymentMethod, "Tarjeta", StringComparison.OrdinalIgnoreCase);
+                                var isPayPalPayment = string.Equals(order.PaymentMethod, "PayPal", StringComparison.OrdinalIgnoreCase);
+                                var paymentMethodClass = isCardPayment
+                                    ? "payment-method-badge card"
+                                    : (isCashPayment
+                                        ? "payment-method-badge cash"
+                                        : (isPayPalPayment ? "payment-method-badge paypal" : "payment-method-badge"));
                                 <tr>
                                     <td>@order.ReceiptNumber</td>
                                     <td>@order.UserEmail</td>
                                     <td>@order.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                                     <td>@(order.DeliveredAtUtc.HasValue ? order.DeliveredAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "-")</td>
-                                    <td>@(isCashPayment ? "Pagado en efectivo" : "Pagado en línea")</td>
-                                    <td>@order.PaymentMethod</td>
+                                    <td>@(isCashPayment ? "Local" : "Pago en línea")</td>
+                                    <td><span class="@paymentMethodClass">@order.PaymentMethod</span></td>
                                     <td>@order.Total.ToString("C")</td>
                                     <td>
-                                        <a class="btn-secondary" asp-action="DownloadOrderReceiptPdf" asp-route-receiptId="@order.Id" target="_blank" rel="noopener">Ver</a>
+                                        <button type="button" class="btn-secondary js-open-receipt-preview" data-receipt-url="@Url.Action("PreviewOrderReceiptPdf", new { receiptId = order.Id })">Ver</button>
                                     </td>
                                 </tr>
                             }
@@ -359,6 +391,13 @@
             </section>
         </section>
     </main>
+</div>
+
+<div id="receiptPreviewModal" class="receipt-preview-modal" aria-hidden="true">
+    <div class="receipt-preview-dialog" role="dialog" aria-modal="true" aria-label="Vista previa del comprobante">
+        <button type="button" id="closeReceiptPreview" class="receipt-preview-close" aria-label="Cerrar">×</button>
+        <iframe id="receiptPreviewFrame" class="receipt-preview-frame" title="Comprobante PDF"></iframe>
+    </div>
 </div>
 
 <script>
@@ -376,6 +415,10 @@
         const inventoryTableBody = document.getElementById('inventoryTableBody');
         const menuLinks = document.querySelectorAll('.seller-menu a[data-section]');
         const sections = document.querySelectorAll('.seller-section');
+        const receiptPreviewModal = document.getElementById('receiptPreviewModal');
+        const receiptPreviewFrame = document.getElementById('receiptPreviewFrame');
+        const closeReceiptPreviewButton = document.getElementById('closeReceiptPreview');
+        const openReceiptPreviewButtons = document.querySelectorAll('.js-open-receipt-preview');
 
         function normalizeText(value) {
             return (value || '')
@@ -397,6 +440,28 @@
                     ? `${unreadCount} sin leer`
                     : 'Sin pendientes';
             }
+        }
+
+        function openReceiptPreview(url) {
+            if (!receiptPreviewModal || !receiptPreviewFrame || !url) {
+                return;
+            }
+
+            receiptPreviewFrame.src = url;
+            receiptPreviewModal.classList.add('open');
+            receiptPreviewModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+        }
+
+        function closeReceiptPreview() {
+            if (!receiptPreviewModal || !receiptPreviewFrame) {
+                return;
+            }
+
+            receiptPreviewModal.classList.remove('open');
+            receiptPreviewModal.setAttribute('aria-hidden', 'true');
+            receiptPreviewFrame.removeAttribute('src');
+            document.body.classList.remove('modal-open');
         }
 
         function ensureNotificationEmptyState() {
@@ -558,6 +623,25 @@
 
                 activateSection(sectionId);
             });
+        });
+
+        openReceiptPreviewButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                openReceiptPreview(button.dataset.receiptUrl);
+            });
+        });
+
+        closeReceiptPreviewButton?.addEventListener('click', closeReceiptPreview);
+        receiptPreviewModal?.addEventListener('click', event => {
+            if (event.target === receiptPreviewModal) {
+                closeReceiptPreview();
+            }
+        });
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                closeReceiptPreview();
+            }
         });
 
         updateNotificationCounter(@Model.UnreadNotificationsCount);

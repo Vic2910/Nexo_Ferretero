@@ -801,6 +801,28 @@ namespace Ferre.Controllers
 
         [HttpGet]
         [RequireSession("administrador", "vendedor")]
+        public async Task<IActionResult> PreviewOrderReceiptPdf(Guid receiptId)
+        {
+            if (receiptId == Guid.Empty)
+            {
+                return BadRequest("Comprobante inválido.");
+            }
+
+            var receipt = (await _clientPurchaseService.GetAllPurchasesAsync())
+                .FirstOrDefault(x => x.Id == receiptId);
+            if (receipt is null)
+            {
+                return NotFound("No se encontró el comprobante solicitado.");
+            }
+
+            var customerEmail = string.IsNullOrWhiteSpace(receipt.UserEmail) ? "cliente@nexoferretero.local" : receipt.UserEmail;
+            var pdfBytes = _purchaseReceiptPdfService.Generate(receipt, customerEmail, customerEmail);
+            Response.Headers.ContentDisposition = "inline";
+            return File(pdfBytes, "application/pdf");
+        }
+
+        [HttpGet]
+        [RequireSession("administrador", "vendedor")]
         public async Task<IActionResult> DownloadOrderReceiptPdf(Guid receiptId)
         {
             if (receiptId == Guid.Empty)
@@ -1720,15 +1742,18 @@ namespace Ferre.Controllers
             return View(model);
         }
         [RequireSession("vendedor")]
-        public async Task<IActionResult> Vendedor(string? status = null)
+        public async Task<IActionResult> Vendedor(string? status = null, string? receipt = null)
         {
             var categories = await _categoryService.GetAllAsync();
             var products = await _productService.GetAllAsync();
             var statusFilter = NormalizeSellerOrderStatus(status);
+            var receiptFilter = NormalizeReceiptSearch(receipt);
             var allOrders = await _clientPurchaseService.GetAllPurchasesAsync();
             var filteredOrders = allOrders
                 .Where(order => string.IsNullOrWhiteSpace(statusFilter)
-                    || string.Equals(order.Status, statusFilter, StringComparison.OrdinalIgnoreCase))
+                    || string.Equals(NormalizeSellerOrderStatus(order.Status), statusFilter, StringComparison.OrdinalIgnoreCase))
+                .Where(order => string.IsNullOrWhiteSpace(receiptFilter)
+                    || IsReceiptMatchByLastDigits(order.ReceiptNumber, receiptFilter))
                 .OrderBy(order => order.CreatedAtUtc)
                 .ToList();
             var categoryNameById = categories.ToDictionary(category => category.Id, category => category.Name);
@@ -1745,7 +1770,8 @@ namespace Ferre.Controllers
                 InventoryProducts = inventoryProducts,
                 Notifications = _notificationService.GetAll(),
                 Orders = filteredOrders,
-                StatusFilter = statusFilter ?? string.Empty
+                StatusFilter = statusFilter ?? string.Empty,
+                ReceiptSearchFilter = receiptFilter ?? string.Empty
             };
 
             return View(model);
@@ -1754,33 +1780,33 @@ namespace Ferre.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [RequireSession("vendedor")]
-        public async Task<IActionResult> RegisterCashOrderPayment(Guid receiptId, string? status)
+        public async Task<IActionResult> RegisterCashOrderPayment(Guid receiptId, string? status, string? receipt)
         {
             var result = await _clientPurchaseService.RegisterCashPaymentAsync(receiptId);
             if (!result.Succeeded)
             {
                 TempData["ErrorMessage"] = result.ErrorMessage ?? "No se pudo registrar el pago en efectivo.";
-                return RedirectToAction(nameof(Vendedor), new { status, section = "orders" });
+                return RedirectToAction(nameof(Vendedor), new { status, receipt, section = "orders" });
             }
 
             TempData["SuccessMessage"] = "Pago en efectivo registrado correctamente.";
-            return RedirectToAction(nameof(Vendedor), new { section = "orders" });
+            return RedirectToAction(nameof(Vendedor), new { status, receipt, section = "orders" });
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         [RequireSession("vendedor")]
-        public async Task<IActionResult> MarkOrderAsDelivered(Guid receiptId, string? status)
+        public async Task<IActionResult> MarkOrderAsDelivered(Guid receiptId, string? status, string? receipt)
         {
             var result = await _clientPurchaseService.MarkPurchaseAsDeliveredAsync(receiptId);
             if (!result.Succeeded)
             {
                 TempData["ErrorMessage"] = result.ErrorMessage ?? "No se pudo actualizar el estado del pedido.";
-                return RedirectToAction(nameof(Vendedor), new { status, section = "orders" });
+                return RedirectToAction(nameof(Vendedor), new { status, receipt, section = "orders" });
             }
 
             TempData["SuccessMessage"] = "Pedido marcado como entregado.";
-            return RedirectToAction(nameof(Vendedor), new { section = "orders" });
+            return RedirectToAction(nameof(Vendedor), new { status, receipt, section = "orders" });
         }
 
         [HttpPost]
@@ -2171,14 +2197,43 @@ namespace Ferre.Controllers
             };
         }
 
+        private static string? NormalizeReceiptSearch(string? receipt)
+        {
+            var digits = new string((receipt ?? string.Empty).Where(char.IsDigit).ToArray());
+            if (string.IsNullOrWhiteSpace(digits))
+            {
+                return null;
+            }
+
+            return digits.Length <= 4 ? digits : digits[^4..];
+        }
+
+        private static bool IsReceiptMatchByLastDigits(string? receiptNumber, string requestedDigits)
+        {
+            if (string.IsNullOrWhiteSpace(requestedDigits))
+            {
+                return true;
+            }
+
+            var receiptDigits = new string((receiptNumber ?? string.Empty).Where(char.IsDigit).ToArray());
+            return !string.IsNullOrWhiteSpace(receiptDigits)
+                && receiptDigits.EndsWith(requestedDigits, StringComparison.Ordinal);
+        }
+
         private static string? NormalizeSellerOrderStatus(string? status)
         {
             var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
             return normalized switch
             {
+                "pending" => "pendiente",
                 "pendiente" => "pendiente",
+                "paid" => "pagado",
                 "pagado" => "pagado",
+                "delivered" => "entregado",
                 "entregado" => "entregado",
+                "canceled" => "cancelado",
+                "cancelled" => "cancelado",
+                "cancelado" => "cancelado",
                 _ => null
             };
         }

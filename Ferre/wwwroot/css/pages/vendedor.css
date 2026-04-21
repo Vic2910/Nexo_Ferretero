@@ -12,6 +12,10 @@ body {
     color: #1d1d1f;
 }
 
+body.modal-open {
+    overflow: hidden;
+}
+
 .seller-navbar {
     display: flex;
     align-items: center;
@@ -354,10 +358,21 @@ body {
 }
 
 .orders-filter-bar {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) minmax(210px, 280px) auto;
+    gap: 12px;
+    align-items: end;
     margin-bottom: 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 0.9rem;
+}
+
+.orders-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .seller-alert {
@@ -392,6 +407,29 @@ body {
 .orders-filter-bar label {
     font-size: 0.86rem;
     color: #475569;
+    font-weight: 600;
+}
+
+.orders-search-input {
+    width: 100%;
+    padding: 0.7rem 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 30px;
+    background: white;
+}
+
+.orders-search-input:focus,
+.orders-filter-group .inventory-select:focus {
+    outline: none;
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.orders-filter-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
 }
 
 .order-actions-cell {
@@ -484,6 +522,43 @@ body {
     color: #991b1b;
 }
 
+.payment-method-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    background: #f1f5f9;
+    color: #334155;
+}
+
+.payment-method-badge.card {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.payment-method-badge.cash {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.payment-method-badge.paypal {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.order-status-canceled {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    background: #fef3c7;
+    color: #92400e;
+}
+
 .inventory-empty {
     color: #64748b;
     font-size: 0.9rem;
@@ -491,9 +566,69 @@ body {
     padding: 1rem;
 }
 
+.receipt-preview-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 130;
+    padding: 1rem;
+}
+
+.receipt-preview-modal.open {
+    display: flex;
+}
+
+.receipt-preview-dialog {
+    position: relative;
+    width: min(920px, 96vw);
+    height: min(88vh, 900px);
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.35);
+    padding: 1.4rem 1rem 1rem;
+}
+
+.receipt-preview-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: #e2e8f0;
+    color: #1e293b;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.receipt-preview-close:hover {
+    background: #cbd5e1;
+}
+
+.receipt-preview-frame {
+    width: 100%;
+    height: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
 @media (max-width: 1200px) {
     .stock-mini-toolbar {
         grid-template-columns: 1fr;
+    }
+
+    .orders-filter-bar {
+        grid-template-columns: 1fr;
+    }
+
+    .orders-filter-actions {
+        justify-content: flex-start;
     }
 }
 

@@ -15,5 +15,7 @@ public sealed class VendedorDashboardViewModel
 
     public string StatusFilter { get; init; } = string.Empty;
 
+    public string ReceiptSearchFilter { get; init; } = string.Empty;
+
     public int UnreadNotificationsCount => Notifications.Count(x => !x.IsRead);
 }
