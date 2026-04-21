@@ -5,6 +5,8 @@
     Layout = "_LayoutPublic";
     var sellerName = Context.Session.GetString("UserName") ?? "Vendedor";
     var helloName = sellerName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? sellerName;
+    var requestedSection = (Context.Request.Query["section"].FirstOrDefault() ?? "inventory").Trim().ToLowerInvariant();
+    var activeSection = requestedSection == "orders" ? "orders" : "inventory";
 }
 
 @section Styles {
@@ -102,7 +104,8 @@
             </div>
         </div>
         <ul class="seller-menu">
-            <li><a href="#inventory" class="active"><i class="fas fa-warehouse"></i> Inventario</a></li>
+            <li><a href="#inventory" data-section="inventory" class="@(activeSection == "orders" ? string.Empty : "active")"><i class="fas fa-warehouse"></i> Inventario</a></li>
+            <li><a href="#orders" data-section="orders" class="@(activeSection == "orders" ? "active" : string.Empty)"><i class="fas fa-receipt"></i> Pedidos</a></li>
         </ul>
     </aside>
 
@@ -110,79 +113,250 @@
         <div class="seller-header">
             <div>
                 <h1>Hola, @helloName</h1>
-                <p>@sellerName · Control de stock de productos.</p>
+                <p>@sellerName · Control de stock y atención de pedidos.</p>
             </div>
         </div>
 
-        <div class="stock-mini-toolbar">
-            <div class="inventory-search">
-                <i class="fas fa-search"></i>
-                <input type="text" id="inventorySearchInput" placeholder="Buscar por nombre" autocomplete="off" />
-            </div>
-            <select id="inventoryCategoryFilter" class="inventory-select">
-                <option value="">Todas las categorías</option>
-                @foreach (var option in Model.CategoryOptions.OrderBy(x => x.Name))
-                {
-                    <option value="@option.Name">@option.Name</option>
-                }
-            </select>
-            <select id="inventoryStockFilter" class="inventory-select">
-                <option value="all">Todos</option>
-                <option value="low">Por vencer (stock ≤ mínimo)</option>
-                <option value="out">Sin stock</option>
-                <option value="high">Stock más alto</option>
-            </select>
-        </div>
-
-        <section class="table-section" id="inventory">
-            <table class="inventory-table">
-                <thead>
-                    <tr>
-                        <th>Producto</th>
-                        <th>Categoría</th>
-                        <th>Stock</th>
-                        <th>Stock mínimo</th>
-                        <th>Alerta</th>
-                    </tr>
-                </thead>
-                <tbody id="inventoryTableBody">
-                    @if (!Model.InventoryProducts.Any())
+        <section id="inventory" class="seller-section @(activeSection == "orders" ? string.Empty : "active")">
+            <div class="stock-mini-toolbar">
+                <div class="inventory-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="inventorySearchInput" placeholder="Buscar por nombre" autocomplete="off" />
+                </div>
+                <select id="inventoryCategoryFilter" class="inventory-select">
+                    <option value="">Todas las categorías</option>
+                    @foreach (var option in Model.CategoryOptions.OrderBy(x => x.Name))
                     {
-                        <tr>
-                            <td colspan="5" class="inventory-empty">No hay productos en inventario.</td>
-                        </tr>
+                        <option value="@option.Name">@option.Name</option>
                     }
-                    else
-                    {
-                        foreach (var product in Model.InventoryProducts)
+                </select>
+                <select id="inventoryStockFilter" class="inventory-select">
+                    <option value="all">Todos</option>
+                    <option value="low">Por vencer (stock ≤ mínimo)</option>
+                    <option value="out">Sin stock</option>
+                    <option value="high">Stock más alto</option>
+                </select>
+            </div>
+
+            <section class="table-section">
+                <table class="inventory-table">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Categoría</th>
+                            <th>Stock</th>
+                            <th>Stock mínimo</th>
+                            <th>Alerta</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryTableBody">
+                        @if (!Model.InventoryProducts.Any())
                         {
-                            var categoryName = Model.CategoryOptions.FirstOrDefault(c => c.Id == product.CategoryId)?.Name ?? "Sin categoría";
-                            var isOutOfStock = product.Stock <= 0;
-                            var isLowStock = !isOutOfStock && product.Stock < product.MinStock;
-                            <tr data-inventory-name="@product.Name" data-inventory-category="@categoryName" data-inventory-stock="@product.Stock" data-inventory-min-stock="@product.MinStock">
-                                <td>@product.Name</td>
-                                <td>@categoryName</td>
-                                <td class="@(isLowStock ? "stock-low" : string.Empty)">@product.Stock</td>
-                                <td>@product.MinStock</td>
-                                <td>
-                                    @if (isOutOfStock)
-                                    {
-                                        <span class="stock-alert-badge out">⚠ Sin stock</span>
-                                    }
-                                    else if (isLowStock)
-                                    {
-                                        <span class="stock-alert-badge low">⚠ Stock bajo</span>
-                                    }
-                                    else
-                                    {
-                                        <span>-</span>
-                                    }
-                                </td>
+                            <tr>
+                                <td colspan="5" class="inventory-empty">No hay productos en inventario.</td>
                             </tr>
                         }
-                    }
-                </tbody>
-            </table>
+                        else
+                        {
+                            foreach (var product in Model.InventoryProducts)
+                            {
+                                var categoryName = Model.CategoryOptions.FirstOrDefault(c => c.Id == product.CategoryId)?.Name ?? "Sin categoría";
+                                var isOutOfStock = product.Stock <= 0;
+                                var isLowStock = !isOutOfStock && product.Stock < product.MinStock;
+                                <tr data-inventory-name="@product.Name" data-inventory-category="@categoryName" data-inventory-stock="@product.Stock" data-inventory-min-stock="@product.MinStock">
+                                    <td>@product.Name</td>
+                                    <td>@categoryName</td>
+                                    <td class="@(isLowStock ? "stock-low" : string.Empty)">@product.Stock</td>
+                                    <td>@product.MinStock</td>
+                                    <td>
+                                        @if (isOutOfStock)
+                                        {
+                                            <span class="stock-alert-badge out">⚠ Sin stock</span>
+                                        }
+                                        else if (isLowStock)
+                                        {
+                                            <span class="stock-alert-badge low">⚠ Stock bajo</span>
+                                        }
+                                        else
+                                        {
+                                            <span>-</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </section>
+
+        <section id="orders" class="seller-section @(activeSection == "orders" ? "active" : string.Empty)">
+            @{
+                var deliveredOrders = Model.Orders
+                    .Where(x => string.Equals(x.Status, "entregado", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var activeOrders = Model.Orders
+                    .Where(x => !string.Equals(x.Status, "entregado", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            @if (TempData["SuccessMessage"] is string successMessage && !string.IsNullOrWhiteSpace(successMessage))
+            {
+                <div class="seller-alert success">@successMessage</div>
+            }
+
+            @if (TempData["ErrorMessage"] is string errorMessage && !string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="seller-alert error">@errorMessage</div>
+            }
+
+            <form asp-action="Vendedor" method="get" class="orders-filter-bar">
+                <input type="hidden" name="section" value="orders" />
+                <label for="ordersStatusFilter">Filtrar estado</label>
+                <select id="ordersStatusFilter" name="status" class="inventory-select">
+                    <option value="" selected="@(string.IsNullOrWhiteSpace(Model.StatusFilter) ? "selected" : null)">Todos</option>
+                    <option value="pendiente" selected="@(string.Equals(Model.StatusFilter, "pendiente", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Pendiente</option>
+                    <option value="pagado" selected="@(string.Equals(Model.StatusFilter, "pagado", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Pagado</option>
+                    <option value="entregado" selected="@(string.Equals(Model.StatusFilter, "entregado", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Entregado</option>
+                </select>
+                <button type="submit" class="btn-secondary">Aplicar</button>
+                <a class="btn-secondary" href="@Url.Action("Vendedor", new { section = "orders" })">Quitar filtro</a>
+            </form>
+
+            <section class="table-section">
+                <div class="orders-table-title">Pedidos en atención</div>
+                <table class="inventory-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Cliente</th>
+                            <th>Fecha</th>
+                            <th>Estado</th>
+                            <th>Estado de pago</th>
+                            <th>Método</th>
+                            <th>Total</th>
+                            <th>Comprobante</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!activeOrders.Any())
+                        {
+                            <tr>
+                                <td colspan="9" class="inventory-empty">No hay pedidos para el filtro seleccionado.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var order in activeOrders)
+                            {
+                                var normalizedStatus = (order.Status ?? string.Empty).Trim().ToLowerInvariant();
+                                var isPending = string.Equals(normalizedStatus, "pendiente", StringComparison.Ordinal);
+                                var isPaid = string.Equals(normalizedStatus, "pagado", StringComparison.Ordinal);
+                                var isCanceled = string.Equals(normalizedStatus, "cancelado", StringComparison.Ordinal);
+                                var isCashPayment = string.Equals(order.PaymentMethod, "Efectivo", StringComparison.OrdinalIgnoreCase);
+                                var paymentStatusText = isPending
+                                    ? "Pendiente de pago"
+                                    : (isCashPayment ? "Pagado en efectivo" : "Pagado en línea");
+                                <tr>
+                                    <td>@order.ReceiptNumber</td>
+                                    <td>@order.UserEmail</td>
+                                    <td>@order.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>
+                                        @if (isPending)
+                                        {
+                                            <span class="stock-alert-badge low">Pendiente</span>
+                                        }
+                                        else if (isCanceled)
+                                        {
+                                            <span class="stock-alert-badge out">Cancelado</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="stock-alert-badge" style="background:#dbeafe;color:#1d4ed8;">Pagado</span>
+                                        }
+                                    </td>
+                                    <td>@paymentStatusText</td>
+                                    <td>@order.PaymentMethod</td>
+                                    <td>@order.Total.ToString("C")</td>
+                                    <td>
+                                        <a class="btn-secondary" asp-action="DownloadOrderReceiptPdf" asp-route-receiptId="@order.Id" target="_blank" rel="noopener">Ver</a>
+                                    </td>
+                                    <td class="order-actions-cell">
+                                        @if (isPending && isCashPayment)
+                                        {
+                                            <form asp-action="RegisterCashOrderPayment" method="post">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="receiptId" value="@order.Id" />
+                                                <input type="hidden" name="status" value="@Model.StatusFilter" />
+                                                <button type="submit" class="btn-secondary">Cobrar efectivo</button>
+                                            </form>
+                                        }
+                                        <form asp-action="MarkOrderAsDelivered" method="post">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="receiptId" value="@order.Id" />
+                                            <input type="hidden" name="status" value="@Model.StatusFilter" />
+                                            @if (isPaid)
+                                            {
+                                                <button type="submit" class="btn-secondary">Marcar entregado</button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn-secondary" disabled="disabled">Marcar entregado</button>
+                                            }
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="table-section delivered-orders-section">
+                <div class="orders-table-title">Pedidos entregados</div>
+                <table class="inventory-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Cliente</th>
+                            <th>Fecha pedido</th>
+                            <th>Fecha entrega</th>
+                            <th>Estado de pago</th>
+                            <th>Método</th>
+                            <th>Total</th>
+                            <th>Comprobante</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!deliveredOrders.Any())
+                        {
+                            <tr>
+                                <td colspan="8" class="inventory-empty">No hay pedidos entregados.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var order in deliveredOrders)
+                            {
+                                var isCashPayment = string.Equals(order.PaymentMethod, "Efectivo", StringComparison.OrdinalIgnoreCase);
+                                <tr>
+                                    <td>@order.ReceiptNumber</td>
+                                    <td>@order.UserEmail</td>
+                                    <td>@order.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>@(order.DeliveredAtUtc.HasValue ? order.DeliveredAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "-")</td>
+                                    <td>@(isCashPayment ? "Pagado en efectivo" : "Pagado en línea")</td>
+                                    <td>@order.PaymentMethod</td>
+                                    <td>@order.Total.ToString("C")</td>
+                                    <td>
+                                        <a class="btn-secondary" asp-action="DownloadOrderReceiptPdf" asp-route-receiptId="@order.Id" target="_blank" rel="noopener">Ver</a>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </section>
         </section>
     </main>
 </div>
@@ -200,6 +374,8 @@
         const inventoryCategoryFilter = document.getElementById('inventoryCategoryFilter');
         const inventoryStockFilter = document.getElementById('inventoryStockFilter');
         const inventoryTableBody = document.getElementById('inventoryTableBody');
+        const menuLinks = document.querySelectorAll('.seller-menu a[data-section]');
+        const sections = document.querySelectorAll('.seller-section');
 
         function normalizeText(value) {
             return (value || '')
@@ -324,6 +500,26 @@
             });
         }
 
+        function activateSection(sectionId) {
+            sections.forEach(section => {
+                section.classList.remove('active');
+            });
+
+            menuLinks.forEach(link => {
+                link.classList.remove('active');
+            });
+
+            const targetSection = document.getElementById(sectionId);
+            const targetLink = document.querySelector(`.seller-menu a[data-section="${sectionId}"]`);
+            if (targetSection) {
+                targetSection.classList.add('active');
+            }
+
+            if (targetLink) {
+                targetLink.classList.add('active');
+            }
+        }
+
         notificationToggle?.addEventListener('click', event => {
             event.stopPropagation();
             notificationPanel?.classList.toggle('open');
@@ -352,9 +548,21 @@
         inventorySearchInput?.addEventListener('input', applyInventoryFilters);
         inventoryCategoryFilter?.addEventListener('change', applyInventoryFilters);
         inventoryStockFilter?.addEventListener('change', applyInventoryFilters);
+        menuLinks.forEach(link => {
+            link.addEventListener('click', event => {
+                event.preventDefault();
+                const sectionId = link.dataset.section;
+                if (!sectionId) {
+                    return;
+                }
+
+                activateSection(sectionId);
+            });
+        });
 
         updateNotificationCounter(@Model.UnreadNotificationsCount);
         ensureNotificationEmptyState();
         applyInventoryFilters();
+        activateSection('@activeSection');
     })();
 </script>

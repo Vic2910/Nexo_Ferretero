@@ -55,6 +55,7 @@ public sealed class FileClientPurchaseService : IClientPurchaseService
                 _ => "Otro"
             },
             Status = normalizedPaymentMethod == "efectivo" ? "pendiente" : "pagado",
+            PaidAtUtc = normalizedPaymentMethod == "efectivo" ? null : nowUtc,
             Lines = lines.Select(line => new ClientPurchaseReceiptLine
             {
                 ProductId = line.Product.Id,
@@ -193,6 +194,11 @@ public sealed class FileClientPurchaseService : IClientPurchaseService
                 return (false, "El pedido ya fue cancelado.");
             }
 
+            if (string.Equals(receipt.Status, "entregado", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "No se puede anular un pedido entregado.");
+            }
+
             receipt.Status = "cancelado";
             await WriteStoreUnsafeAsync(store, cancellationToken);
             return (true, null);
@@ -200,6 +206,96 @@ public sealed class FileClientPurchaseService : IClientPurchaseService
         catch
         {
             return (false, "No fue posible anular el pedido.");
+        }
+        finally
+        {
+            SyncRoot.Release();
+        }
+    }
+
+    public async Task<(bool Succeeded, string? ErrorMessage)> RegisterCashPaymentAsync(
+        Guid receiptId,
+        CancellationToken cancellationToken = default)
+    {
+        if (receiptId == Guid.Empty)
+        {
+            return (false, "El pedido seleccionado no es válido.");
+        }
+
+        await SyncRoot.WaitAsync(cancellationToken);
+        try
+        {
+            var store = await ReadStoreUnsafeAsync(cancellationToken);
+            var receipt = store.ItemsByOwner
+                .SelectMany(x => x.Value ?? new List<ClientPurchaseReceipt>())
+                .FirstOrDefault(x => x.Id == receiptId);
+
+            if (receipt is null)
+            {
+                return (false, "No se encontró el pedido seleccionado.");
+            }
+
+            if (!string.Equals(receipt.Status, "pendiente", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(receipt.PaymentMethod, "Efectivo", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "Solo se puede registrar cobro en efectivo para pedidos pendientes.");
+            }
+
+            receipt.Status = "pagado";
+            receipt.PaidAtUtc = DateTime.UtcNow;
+            await WriteStoreUnsafeAsync(store, cancellationToken);
+            return (true, null);
+        }
+        catch
+        {
+            return (false, "No fue posible registrar el pago en efectivo.");
+        }
+        finally
+        {
+            SyncRoot.Release();
+        }
+    }
+
+    public async Task<(bool Succeeded, string? ErrorMessage)> MarkPurchaseAsDeliveredAsync(
+        Guid receiptId,
+        CancellationToken cancellationToken = default)
+    {
+        if (receiptId == Guid.Empty)
+        {
+            return (false, "El pedido seleccionado no es válido.");
+        }
+
+        await SyncRoot.WaitAsync(cancellationToken);
+        try
+        {
+            var store = await ReadStoreUnsafeAsync(cancellationToken);
+            var receipt = store.ItemsByOwner
+                .SelectMany(x => x.Value ?? new List<ClientPurchaseReceipt>())
+                .FirstOrDefault(x => x.Id == receiptId);
+
+            if (receipt is null)
+            {
+                return (false, "No se encontró el pedido seleccionado.");
+            }
+
+            if (string.Equals(receipt.Status, "entregado", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "El pedido ya fue marcado como entregado.");
+            }
+
+            if (!string.Equals(receipt.Status, "pagado", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "Solo se puede marcar como entregado un pedido pagado.");
+            }
+
+            receipt.Status = "entregado";
+            receipt.DeliveredAtUtc = DateTime.UtcNow;
+            await WriteStoreUnsafeAsync(store, cancellationToken);
+            return (true, null);
+        }
+        catch
+        {
+            return (false, "No fue posible actualizar el estado del pedido.");
         }
         finally
         {

@@ -60,6 +60,7 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
             CreatedAtUtc = nowUtc,
             PaymentMethod = paymentLabel,
             Status = normalizedPaymentMethod == "efectivo" ? "pendiente" : "pagado",
+            PaidAtUtc = normalizedPaymentMethod == "efectivo" ? null : nowUtc,
             Lines = lines.Select(line => new ClientPurchaseReceiptLine
             {
                 ProductId = line.Product.Id,
@@ -82,6 +83,7 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
                 CreatedAtUtc = receipt.CreatedAtUtc,
                 PaymentMethod = receipt.PaymentMethod,
                 Status = receipt.Status,
+                PaidAtUtc = receipt.PaidAtUtc,
                 Total = receipt.Total
             };
 
@@ -272,6 +274,11 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
                 return (false, "El pedido ya fue cancelado.");
             }
 
+            if (string.Equals(target.Status, "entregado", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "No se puede anular un pedido entregado.");
+            }
+
             target.Status = "cancelado";
             await _client.From<ClientPurchaseRow>().Update(target).ConfigureAwait(false);
             return (true, null);
@@ -279,6 +286,90 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
         catch
         {
             return (false, "No fue posible anular el pedido.");
+        }
+    }
+
+    public async Task<(bool Succeeded, string? ErrorMessage)> RegisterCashPaymentAsync(
+        Guid receiptId,
+        CancellationToken cancellationToken = default)
+    {
+        if (receiptId == Guid.Empty)
+        {
+            return (false, "El pedido seleccionado no es válido.");
+        }
+
+        await _initializer.Value.ConfigureAwait(false);
+
+        try
+        {
+            var purchaseResponse = await _client.From<ClientPurchaseRow>()
+                .Get()
+                .ConfigureAwait(false);
+
+            var target = purchaseResponse.Models.FirstOrDefault(x => x.Id == receiptId);
+            if (target is null)
+            {
+                return (false, "No se encontró el pedido seleccionado.");
+            }
+
+            if (!string.Equals(target.Status, "pendiente", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(target.PaymentMethod, "Efectivo", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "Solo se puede registrar cobro en efectivo para pedidos pendientes.");
+            }
+
+            target.Status = "pagado";
+            target.PaidAtUtc = DateTime.UtcNow;
+            await _client.From<ClientPurchaseRow>().Update(target).ConfigureAwait(false);
+            return (true, null);
+        }
+        catch
+        {
+            return (false, "No fue posible registrar el pago en efectivo.");
+        }
+    }
+
+    public async Task<(bool Succeeded, string? ErrorMessage)> MarkPurchaseAsDeliveredAsync(
+        Guid receiptId,
+        CancellationToken cancellationToken = default)
+    {
+        if (receiptId == Guid.Empty)
+        {
+            return (false, "El pedido seleccionado no es válido.");
+        }
+
+        await _initializer.Value.ConfigureAwait(false);
+
+        try
+        {
+            var purchaseResponse = await _client.From<ClientPurchaseRow>()
+                .Get()
+                .ConfigureAwait(false);
+
+            var target = purchaseResponse.Models.FirstOrDefault(x => x.Id == receiptId);
+            if (target is null)
+            {
+                return (false, "No se encontró el pedido seleccionado.");
+            }
+
+            if (string.Equals(target.Status, "entregado", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "El pedido ya fue marcado como entregado.");
+            }
+
+            if (!string.Equals(target.Status, "pagado", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "Solo se puede marcar como entregado un pedido pagado.");
+            }
+
+            target.Status = "entregado";
+            target.DeliveredAtUtc = DateTime.UtcNow;
+            await _client.From<ClientPurchaseRow>().Update(target).ConfigureAwait(false);
+            return (true, null);
+        }
+        catch
+        {
+            return (false, "No fue posible actualizar el estado del pedido.");
         }
     }
 
@@ -314,6 +405,8 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
                 CreatedAtUtc = purchase.CreatedAtUtc,
                 PaymentMethod = purchase.PaymentMethod,
                 Status = purchase.Status,
+                PaidAtUtc = purchase.PaidAtUtc,
+                DeliveredAtUtc = purchase.DeliveredAtUtc,
                 Total = purchase.Total,
                 Lines = mappedLines
             };
@@ -375,6 +468,12 @@ public sealed class SupabaseClientPurchaseService : IClientPurchaseService
 
         [Column("status")]
         public string Status { get; set; } = string.Empty;
+
+        [Column("paid_at_utc")]
+        public DateTime? PaidAtUtc { get; set; }
+
+        [Column("delivered_at_utc")]
+        public DateTime? DeliveredAtUtc { get; set; }
 
         [Column("total")]
         public decimal Total { get; set; }

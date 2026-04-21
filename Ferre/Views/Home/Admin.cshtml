@@ -1488,6 +1488,7 @@
                                 foreach (var order in adminOrders)
                                 {
                                     var isCanceled = string.Equals(order.Status, "cancelado", StringComparison.OrdinalIgnoreCase);
+                                    var isDelivered = string.Equals(order.Status, "entregado", StringComparison.OrdinalIgnoreCase);
                                     <tr>
                                         <td>@order.ReceiptNumber</td>
                                         <td>@(string.IsNullOrWhiteSpace(order.UserEmail) ? "Cliente no disponible" : order.UserEmail)</td>
@@ -1503,6 +1504,10 @@
                                             {
                                                 <span class="status-badge warning">Pendiente</span>
                                             }
+                                            else if (string.Equals(order.Status, "entregado", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                <span class="status-badge">Entregado</span>
+                                            }
                                             else
                                             {
                                                 <span class="status-badge">Pagado</span>
@@ -1513,7 +1518,7 @@
                                                 @Html.AntiForgeryToken()
                                                 <input type="hidden" name="receiptId" value="@order.Id" />
                                                 <input type="hidden" name="ordersDate" value="@ordersDateFilter" />
-                                                <button type="submit" class="btn-secondary" disabled="@isCanceled" onclick="return confirm('¿Seguro que deseas anular este pedido?');">Anular</button>
+                                                <button type="submit" class="btn-secondary" disabled="@(isCanceled || isDelivered)" onclick="return confirm('¿Seguro que deseas anular este pedido?');">Anular</button>
                                             </form>
                                         </td>
                                     </tr>

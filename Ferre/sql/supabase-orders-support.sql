@@ -8,8 +8,10 @@ create table if not exists public.client_purchases (
     created_at_utc timestamptz not null default timezone('utc', now()),
     payment_method text not null,
     status text not null,
+    paid_at_utc timestamptz,
+    delivered_at_utc timestamptz,
     total numeric(12,2) not null default 0,
-    constraint client_purchases_status_chk check (lower(status) in ('pendiente', 'pagado', 'cancelado')),
+    constraint client_purchases_status_chk check (lower(status) in ('pendiente', 'pagado', 'entregado', 'cancelado')),
     constraint client_purchases_total_chk check (total >= 0)
 );
 
@@ -53,6 +55,10 @@ create index if not exists ix_client_contact_messages_created_at_utc on public.c
 
 -- Compatibilidad para instalaciones previas sin defaults en IDs
 alter table public.client_purchases alter column id set default gen_random_uuid();
+alter table public.client_purchases add column if not exists paid_at_utc timestamptz;
+alter table public.client_purchases add column if not exists delivered_at_utc timestamptz;
+alter table public.client_purchases drop constraint if exists client_purchases_status_chk;
+alter table public.client_purchases add constraint client_purchases_status_chk check (lower(status) in ('pendiente', 'pagado', 'entregado', 'cancelado'));
 alter table public.client_purchase_lines alter column id set default gen_random_uuid();
 alter table public.client_contact_messages alter column id set default gen_random_uuid();
 alter table public.client_contact_messages add column if not exists conversation_id uuid;

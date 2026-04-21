@@ -27,4 +27,12 @@ public interface IClientPurchaseService
     Task<(bool Succeeded, string? ErrorMessage)> CancelPurchaseAsync(
         Guid receiptId,
         CancellationToken cancellationToken = default);
+
+    Task<(bool Succeeded, string? ErrorMessage)> RegisterCashPaymentAsync(
+        Guid receiptId,
+        CancellationToken cancellationToken = default);
+
+    Task<(bool Succeeded, string? ErrorMessage)> MarkPurchaseAsDeliveredAsync(
+        Guid receiptId,
+        CancellationToken cancellationToken = default);
 }

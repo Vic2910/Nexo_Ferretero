@@ -14,6 +14,10 @@ public sealed class ClientPurchaseReceipt
 
     public string Status { get; set; } = string.Empty;
 
+    public DateTime? PaidAtUtc { get; set; }
+
+    public DateTime? DeliveredAtUtc { get; set; }
+
     public decimal Total { get; set; }
 
     public List<ClientPurchaseReceiptLine> Lines { get; set; } = new();

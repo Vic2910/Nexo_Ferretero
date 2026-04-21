@@ -799,6 +799,29 @@ namespace Ferre.Controllers
             return File(pdfBytes, "application/pdf", fileName);
         }
 
+        [HttpGet]
+        [RequireSession("administrador", "vendedor")]
+        public async Task<IActionResult> DownloadOrderReceiptPdf(Guid receiptId)
+        {
+            if (receiptId == Guid.Empty)
+            {
+                return BadRequest("Comprobante inválido.");
+            }
+
+            var receipt = (await _clientPurchaseService.GetAllPurchasesAsync())
+                .FirstOrDefault(x => x.Id == receiptId);
+            if (receipt is null)
+            {
+                return NotFound("No se encontró el comprobante solicitado.");
+            }
+
+            var customerEmail = string.IsNullOrWhiteSpace(receipt.UserEmail) ? "cliente@nexoferretero.local" : receipt.UserEmail;
+            var pdfBytes = _purchaseReceiptPdfService.Generate(receipt, customerEmail, customerEmail);
+            var sanitizedNumber = Regex.Replace(receipt.ReceiptNumber ?? "Comprobante", "[^a-zA-Z0-9_-]", string.Empty);
+            var fileName = $"{(string.IsNullOrWhiteSpace(sanitizedNumber) ? "Comprobante" : sanitizedNumber)}.pdf";
+            return File(pdfBytes, "application/pdf", fileName);
+        }
+
         [HttpPost]
         [ValidateAntiForgeryToken]
         [RequireSession("administrador")]
@@ -1697,10 +1720,17 @@ namespace Ferre.Controllers
             return View(model);
         }
         [RequireSession("vendedor")]
-        public async Task<IActionResult> Vendedor()
+        public async Task<IActionResult> Vendedor(string? status = null)
         {
             var categories = await _categoryService.GetAllAsync();
             var products = await _productService.GetAllAsync();
+            var statusFilter = NormalizeSellerOrderStatus(status);
+            var allOrders = await _clientPurchaseService.GetAllPurchasesAsync();
+            var filteredOrders = allOrders
+                .Where(order => string.IsNullOrWhiteSpace(statusFilter)
+                    || string.Equals(order.Status, statusFilter, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(order => order.CreatedAtUtc)
+                .ToList();
             var categoryNameById = categories.ToDictionary(category => category.Id, category => category.Name);
             var inventoryProducts = products
                 .OrderBy(product => categoryNameById.TryGetValue(product.CategoryId, out var categoryName)
@@ -1713,10 +1743,44 @@ namespace Ferre.Controllers
             {
                 CategoryOptions = categories.OrderBy(x => x.Name).ToList(),
                 InventoryProducts = inventoryProducts,
-                Notifications = _notificationService.GetAll()
+                Notifications = _notificationService.GetAll(),
+                Orders = filteredOrders,
+                StatusFilter = statusFilter ?? string.Empty
             };
 
             return View(model);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [RequireSession("vendedor")]
+        public async Task<IActionResult> RegisterCashOrderPayment(Guid receiptId, string? status)
+        {
+            var result = await _clientPurchaseService.RegisterCashPaymentAsync(receiptId);
+            if (!result.Succeeded)
+            {
+                TempData["ErrorMessage"] = result.ErrorMessage ?? "No se pudo registrar el pago en efectivo.";
+                return RedirectToAction(nameof(Vendedor), new { status, section = "orders" });
+            }
+
+            TempData["SuccessMessage"] = "Pago en efectivo registrado correctamente.";
+            return RedirectToAction(nameof(Vendedor), new { section = "orders" });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [RequireSession("vendedor")]
+        public async Task<IActionResult> MarkOrderAsDelivered(Guid receiptId, string? status)
+        {
+            var result = await _clientPurchaseService.MarkPurchaseAsDeliveredAsync(receiptId);
+            if (!result.Succeeded)
+            {
+                TempData["ErrorMessage"] = result.ErrorMessage ?? "No se pudo actualizar el estado del pedido.";
+                return RedirectToAction(nameof(Vendedor), new { status, section = "orders" });
+            }
+
+            TempData["SuccessMessage"] = "Pedido marcado como entregado.";
+            return RedirectToAction(nameof(Vendedor), new { section = "orders" });
         }
 
         [HttpPost]
@@ -2103,6 +2167,18 @@ namespace Ferre.Controllers
             {
                 SupportStatusPending => SupportStatusPending,
                 SupportStatusResolved => SupportStatusResolved,
+                _ => null
+            };
+        }
+
+        private static string? NormalizeSellerOrderStatus(string? status)
+        {
+            var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized switch
+            {
+                "pendiente" => "pendiente",
+                "pagado" => "pagado",
+                "entregado" => "entregado",
                 _ => null
             };
         }
